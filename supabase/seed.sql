@@ -1,0 +1,2 @@
+-- Promote first admin after creating user in Supabase Auth Dashboard
+-- UPDATE community_hub.profiles SET role = 'admin', status = 'approved' WHERE email = 'admin@example.com';
