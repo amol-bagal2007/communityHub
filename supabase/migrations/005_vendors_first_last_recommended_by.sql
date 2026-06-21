@@ -1,0 +1,1 @@
+-- vendors: name -> first_name, last_name; add recommended_by

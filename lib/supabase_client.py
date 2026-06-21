@@ -8,6 +8,7 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SCHEMA = os.getenv("SUPABASE_SCHEMA", "community_hub")
 
 
@@ -36,3 +37,17 @@ def get_client() -> SchemaClient:
             "Set SUPABASE_URL and SUPABASE_KEY in .env (copy from .env.example)."
         )
     return SchemaClient(create_client(SUPABASE_URL, SUPABASE_KEY), SCHEMA)
+
+
+def get_service_client() -> SchemaClient:
+    """
+    Service-role client for admin-only server actions (e.g., creating users).
+
+    IMPORTANT: Keep SUPABASE_SERVICE_ROLE_KEY only in local/server env (.env),
+    never commit it. This bypasses RLS.
+    """
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise RuntimeError(
+            "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env to use admin user creation."
+        )
+    return SchemaClient(create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY), SCHEMA)

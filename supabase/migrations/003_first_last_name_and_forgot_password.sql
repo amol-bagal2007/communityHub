@@ -1,0 +1,1 @@
+-- Split full_name into first_name and last_name; update signup trigger

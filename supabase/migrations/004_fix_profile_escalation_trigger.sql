@@ -1,0 +1,1 @@
+-- Fix: allow postgres/service_role (SQL Editor) and is_admin() to update protected fields

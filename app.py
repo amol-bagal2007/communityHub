@@ -8,6 +8,13 @@ from lib.auth import (
     is_logged_in,
     restore_session,
 )
+from lib.password_recovery import (
+    RECOVERY_FLAG,
+    inject_recovery_url_handler,
+    render_reset_password,
+    try_start_recovery_session,
+)
+from lib.profile_utils import format_name
 from lib.pwa import inject_pwa_meta
 from lib.supabase_client import get_client
 from views.admin import render_admin_dashboard
@@ -23,11 +30,18 @@ def main() -> None:
         initial_sidebar_state="collapsed",
     )
     inject_pwa_meta()
+    inject_recovery_url_handler()
 
     client = get_client()
+    try_start_recovery_session(client)
     restore_session(client)
 
     _render_sidebar(client)
+
+    if st.session_state.get(RECOVERY_FLAG) and is_logged_in():
+        st.title("🏘️ CommunityHub")
+        render_reset_password(client)
+        return
 
     if not is_logged_in():
         st.title("🏘️ CommunityHub")
@@ -75,7 +89,7 @@ def _render_sidebar(client) -> None:
         if is_logged_in():
             profile = get_profile()
             if profile:
-                st.write(profile.get("full_name", ""))
+                st.write(format_name(profile))
                 st.caption(f"{profile.get('role', '').title()} · {profile.get('status', '')}")
             if st.button("Logout", use_container_width=True):
                 try:
@@ -83,6 +97,7 @@ def _render_sidebar(client) -> None:
                 except Exception:
                     pass
                 clear_session()
+                st.session_state.pop(RECOVERY_FLAG, None)
                 st.rerun()
 
 

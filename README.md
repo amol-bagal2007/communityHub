@@ -26,7 +26,8 @@ All tables live under `community_hub`:
 | `community_hub.societies` | Society name, area, road, pin code |
 | `community_hub.towers` | Towers per society |
 | `community_hub.profiles` | User profiles linked to `auth.users` |
-| `community_hub.vendors` | Community vendors |
+| `community_hub.vendor_categories` | Admin-maintained vendor category list |
+| `community_hub.vendors` | Vendor first/last name, category, recommended by, contact info |
 | `community_hub.events` | Society events (published to users) |
 
 Migrations are applied via Supabase MCP. Local reference: `supabase/migrations/`.
@@ -43,7 +44,48 @@ Configure `.env` (see `.env.example`):
 SUPABASE_URL=https://gbtehdbjqmoelejgdfqd.supabase.co
 SUPABASE_KEY=your-anon-key
 SUPABASE_SCHEMA=community_hub
+APP_URL=http://localhost:8501
 ```
+
+`APP_URL` is used for password reset email links. In production, set this to your deployed HTTPS URL.
+
+### Forgot password setup (Supabase Dashboard)
+
+1. **Authentication → URL Configuration**
+   - **Site URL:** your app URL (e.g. `http://localhost:8501` or production HTTPS URL)
+   - **Redirect URLs:** add the same URL(s), e.g. `http://localhost:8501`, `https://your-app.streamlit.app`
+2. Users use the **Forgot Password** tab → receive email → click link → set a new password in the app.
+
+
+### Password rules (Supabase vs app)
+
+CommunityHub validates: **7+ characters**, at least **one letter** and **one number**.
+
+If registration fails with *"Password should contain at least one character of each..."*, that rule comes from **Supabase**, not the app.
+
+**To relax Supabase password rules:**
+
+1. [Supabase Dashboard](https://supabase.com/dashboard/project/gbtehdbjqmoelejgdfqd) → **Authentication**
+2. Open **Sign In / Providers** → **Email**
+3. Scroll to **Password** / **Password strength** settings
+4. Set **Minimum password length** to `7`
+5. Change **Required characters** to **No required characters** (or only what you need — not all four types)
+6. Save
+
+**Or** keep strict Supabase rules and use passwords like `Pass@123` (upper + lower + number + symbol).
+
+### Enable email sign-ups (required for registration)
+
+If registration fails with **"Email signups are disabled"**:
+
+1. Open [Supabase Dashboard](https://supabase.com/dashboard) → project **comm_hub**
+2. Go to **Authentication → Providers → Email**
+3. Turn **ON**:
+   - **Enable Email provider**
+   - **Allow new users to sign up** (under Authentication → **Sign In / Providers** or General settings)
+4. Save
+
+Also under **Authentication → URL Configuration**, add your app URL to **Redirect URLs** for password reset.
 
 ### Create the first admin
 
@@ -74,7 +116,7 @@ See **[SECURITY.md](SECURITY.md)** for:
 
 - Database RLS hardening (profile privilege escalation prevention)
 - Auto email confirm on sign-up and admin approval
-- Password rules (7+ alphanumeric characters)
+- Password rules (7+ chars with letter and number)
 - Supabase Dashboard steps (disable email confirmation, leaked password protection)
 - Secrets and deployment guidance
 

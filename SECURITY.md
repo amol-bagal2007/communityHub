@@ -11,7 +11,7 @@ This document covers security measures implemented in code/database and manual s
 | Auto-confirm email on sign-up | Done (`handle_new_user`) |
 | Auto-confirm email when admin approves user | Done (`confirm_email_on_approval`) |
 | Revoke RPC `EXECUTE` on internal helpers from `anon` | Done |
-| Password: min 7 chars, alphanumeric only (sign-up UI) | Done |
+| Password: min 7 chars, must include letter and number (sign-up UI) | Done |
 | `.env` in `.gitignore` | Done |
 | App uses anon/publishable key only (never service role) | Done |
 
@@ -41,7 +41,7 @@ Auto-confirm triggers already set `email_confirmed_at` on sign-up and approval; 
 
 - Set **Minimum password length** to **7**
 
-The app validates alphanumeric + 7 chars at sign-up; matching Auth settings enforces this at the API level too.
+The app validates min 7 characters with at least one letter and one number at sign-up.
 
 ### 4. HTTPS only (deployment)
 

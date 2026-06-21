@@ -34,7 +34,13 @@ def fetch_profile(client: SchemaClient) -> dict | None:
     user = client.auth.get_user()
     if not user or not user.user:
         return None
-    result = client.table("profiles").select("*").eq("id", user.user.id).single().execute()
+    result = (
+        client.table("profiles")
+        .select("*, member_groups(name), member_sub_groups(name)")
+        .eq("id", user.user.id)
+        .single()
+        .execute()
+    )
     return result.data
 
 
