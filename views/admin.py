@@ -1,13 +1,21 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, time
 
 import streamlit as st
 from lib.supabase_client import SchemaClient
 
 from lib.auth import get_profile
+from lib.event_responses import load_event_responses, render_response_summary
+from lib.event_schedule import (
+    build_event_schedule_payload,
+    format_event_schedule,
+    parse_time_value,
+    validate_event_schedule,
+)
 from lib.member_groups import group_display_name, load_member_groups
 from lib.member_sub_groups import (
+    SHOW_MEMBER_GROUP_FIELDS,
     load_all_member_sub_groups,
     render_group_sub_group_fields,
     sub_group_display_name,
@@ -82,11 +90,16 @@ def _render_pending_approvals(client: SchemaClient) -> None:
                 elif user.get("role") == "resident":
                     staying = "Yes" if user.get("staying_within_society") else "No"
                     expiry_line = f"  \nStaying within Society: {staying}"
+                group_line = (
+                    f"Group: {group_display_name(user)} · Sub-Group: {sub_group_display_name(user)}  \n"
+                    if SHOW_MEMBER_GROUP_FIELDS
+                    else ""
+                )
                 st.markdown(
                     f"**{user.get('title') or ''} {format_name(user)}** ({role_label(user['role'])})  \n"
                     f"{user['email']} · {user.get('phone') or '—'}  \n"
                     f"Sex: {user.get('sex') or '—'} · Age: {user.get('age') or '—'}  \n"
-                    f"Group: {group_display_name(user)} · Sub-Group: {sub_group_display_name(user)}  \n"
+                    f"{group_line}"
                     f"{society} · Tower {tower} · Flat {user.get('flat_number') or '—'}"
                     f"{expiry_line}"
                 )
@@ -113,11 +126,12 @@ def _on_admin_add_society_change() -> None:
 def _render_users_crud(client: SchemaClient) -> None:
     st.subheader("Manage Users")
 
-    _render_member_groups_crud(client)
-    _render_member_sub_groups_crud(client)
-    st.divider()
+    if SHOW_MEMBER_GROUP_FIELDS:
+        _render_member_groups_crud(client)
+        _render_member_sub_groups_crud(client)
+        st.divider()
 
-    groups = load_member_groups(client)
+    groups = load_member_groups(client) if SHOW_MEMBER_GROUP_FIELDS else []
 
     st.markdown("**Add New User (auto-approved)**")
     st.caption(
@@ -733,7 +747,22 @@ def _render_vendors_crud(client: SchemaClient) -> None:
         added_by = format_name(vendor.get("profiles"), "Unknown")
         society = (vendor.get("societies") or {}).get("name", "—")
         vendor_label = format_name(vendor, "Vendor")
-        with st.expander(f"{vendor_label} — {category_display_name(vendor)}"):
+        open_key = f"admin_vendor_open_{vendor['id']}"
+
+        with st.container(border=True):
+            summary, action = st.columns([5, 1])
+            summary.markdown(f"**{vendor_label}** — {category_display_name(vendor)}")
+            if action.button(
+                "Hide" if st.session_state.get(open_key) else "View",
+                key=f"admin_vendor_view_{vendor['id']}",
+                use_container_width=True,
+            ):
+                st.session_state[open_key] = not st.session_state.get(open_key, False)
+                st.rerun()
+
+            if not st.session_state.get(open_key):
+                continue
+
             st.write(f"Society: {society} | Added by: {added_by}")
             st.write(f"Recommended by: {vendor.get('recommended_by') or '—'}")
             st.write(
@@ -824,30 +853,65 @@ def _render_events_crud(client: SchemaClient) -> None:
     societies = client.table("societies").select("id, name").order("name").execute().data or []
     soc_map = {s["name"]: s["id"] for s in societies}
 
+    st.markdown("**Create Event**")
+    include_break = st.checkbox("Include Break", key="add_event_include_break")
     with st.form("add_event"):
-        st.markdown("**Create Event**")
         title = st.text_input("Title")
         description = st.text_area("Description")
+        event_date = st.date_input("Event Date")
         c1, c2 = st.columns(2)
-        event_date = c1.date_input("Event Date")
-        event_time = c2.time_input("Event Time")
+        from_time = c1.time_input("From Time", value=time(9, 0))
+        to_time = c2.time_input("To Time", value=time(12, 0))
+
+        break_from = None
+        break_to = None
+        if include_break:
+            st.markdown("**Break**")
+            b1, b2 = st.columns(2)
+            break_from = b1.time_input("Break From", value=time(10, 30))
+            break_to = b2.time_input("Break To", value=time(10, 45))
+
         location = st.text_input("Location")
-        society_name = st.selectbox("Society", list(soc_map.keys()) if soc_map else [""], key="event_soc")
+        society_name = st.selectbox(
+            "Society", list(soc_map.keys()) if soc_map else [""], key="event_soc"
+        )
         is_published = st.checkbox("Publish immediately", value=True)
         if st.form_submit_button("Create Event", type="primary"):
-            if title.strip() and society_name in soc_map:
-                from datetime import datetime
-
-                dt = datetime.combine(event_date, event_time)
+            errors = []
+            if not title.strip():
+                errors.append("Title is required.")
+            if society_name not in soc_map:
+                errors.append("Select a society.")
+            errors.extend(
+                validate_event_schedule(
+                    from_time=from_time,
+                    to_time=to_time,
+                    include_break=include_break,
+                    break_from=break_from,
+                    break_to=break_to,
+                )
+            )
+            if errors:
+                for err in errors:
+                    st.error(err)
+            else:
+                schedule = build_event_schedule_payload(
+                    event_date=event_date,
+                    from_time=from_time,
+                    to_time=to_time,
+                    include_break=include_break,
+                    break_from=break_from,
+                    break_to=break_to,
+                )
                 client.table("events").insert(
                     {
                         "title": title.strip(),
                         "description": description.strip() or None,
-                        "event_date": dt.isoformat(),
                         "location": location.strip() or None,
                         "society_id": soc_map[society_name],
                         "is_published": is_published,
                         "created_by": profile["id"],
+                        **schedule,
                     }
                 ).execute()
                 st.success("Event created.")
@@ -865,22 +929,128 @@ def _render_events_crud(client: SchemaClient) -> None:
     for event in events:
         society = (event.get("societies") or {}).get("name", "—")
         status = "Published" if event.get("is_published") else "Draft"
-        with st.expander(f"{event['title']} — {status}"):
-            st.write(f"Society: {society}")
-            st.write(f"Date: {event['event_date']} | Location: {event.get('location') or '—'}")
+        open_key = f"admin_event_open_{event['id']}"
+        event_dt = datetime.fromisoformat(str(event["event_date"]).replace("Z", "+00:00"))
+        edit_break_key = f"edit_event_include_break_{event['id']}"
+        if edit_break_key not in st.session_state:
+            st.session_state[edit_break_key] = bool(
+                event.get("break_start_time") and event.get("break_end_time")
+            )
+
+        with st.container(border=True):
+            summary, action = st.columns([5, 1])
+            summary.markdown(f"**{event['title']}** — {status}")
+            summary.caption(
+                f"Society: {society} · {event_dt.strftime('%a, %d %b %Y')} · "
+                f"{format_event_schedule(event)}"
+            )
+            if action.button(
+                "Hide" if st.session_state.get(open_key) else "View",
+                key=f"admin_event_view_{event['id']}",
+                use_container_width=True,
+            ):
+                st.session_state[open_key] = not st.session_state.get(open_key, False)
+                st.rerun()
+
+            if not st.session_state.get(open_key):
+                continue
+
+            st.write(f"Location: {event.get('location') or '—'}")
+            st.write(f"Schedule: {format_event_schedule(event)}")
             if event.get("description"):
                 st.write(event["description"])
+
+            responses = load_event_responses(client, event["id"])
+            render_response_summary(responses)
+
+            include_break_edit = st.checkbox(
+                "Include Break",
+                key=edit_break_key,
+            )
+            current_from = event_dt.time().replace(second=0, microsecond=0)
+            current_to = parse_time_value(event.get("end_time")) or time(12, 0)
+            current_break_from = parse_time_value(event.get("break_start_time")) or time(
+                10, 30
+            )
+            current_break_to = parse_time_value(event.get("break_end_time")) or time(
+                10, 45
+            )
 
             with st.form(f"edit_event_{event['id']}"):
                 et = st.text_input("Title", value=event["title"])
                 ed = st.text_area("Description", value=event.get("description") or "")
+                edit_date = st.date_input(
+                    "Event Date",
+                    value=event_dt.date(),
+                    key=f"edit_event_date_{event['id']}",
+                )
+                t1, t2 = st.columns(2)
+                edit_from = t1.time_input(
+                    "From Time",
+                    value=current_from,
+                    key=f"edit_event_from_{event['id']}",
+                )
+                edit_to = t2.time_input(
+                    "To Time",
+                    value=current_to,
+                    key=f"edit_event_to_{event['id']}",
+                )
+
+                edit_break_from = None
+                edit_break_to = None
+                if include_break_edit:
+                    st.markdown("**Break**")
+                    b1, b2 = st.columns(2)
+                    edit_break_from = b1.time_input(
+                        "Break From",
+                        value=current_break_from,
+                        key=f"edit_event_break_from_{event['id']}",
+                    )
+                    edit_break_to = b2.time_input(
+                        "Break To",
+                        value=current_break_to,
+                        key=f"edit_event_break_to_{event['id']}",
+                    )
+
+                el = st.text_input(
+                    "Location",
+                    value=event.get("location") or "",
+                    key=f"edit_event_location_{event['id']}",
+                )
                 ep = st.checkbox("Published", value=event.get("is_published", False))
                 c1, c2 = st.columns(2)
                 if c1.form_submit_button("Update"):
-                    client.table("events").update(
-                        {"title": et, "description": ed, "is_published": ep}
-                    ).eq("id", event["id"]).execute()
-                    st.rerun()
+                    errors = validate_event_schedule(
+                        from_time=edit_from,
+                        to_time=edit_to,
+                        include_break=include_break_edit,
+                        break_from=edit_break_from,
+                        break_to=edit_break_to,
+                    )
+                    if not et.strip():
+                        errors.append("Title is required.")
+                    if errors:
+                        for err in errors:
+                            st.error(err)
+                    else:
+                        schedule = build_event_schedule_payload(
+                            event_date=edit_date,
+                            from_time=edit_from,
+                            to_time=edit_to,
+                            include_break=include_break_edit,
+                            break_from=edit_break_from,
+                            break_to=edit_break_to,
+                        )
+                        client.table("events").update(
+                            {
+                                "title": et.strip(),
+                                "description": ed.strip() or None,
+                                "location": el.strip() or None,
+                                "is_published": ep,
+                                **schedule,
+                            }
+                        ).eq("id", event["id"]).execute()
+                        st.rerun()
                 if c2.form_submit_button("Delete"):
                     client.table("events").delete().eq("id", event["id"]).execute()
                     st.rerun()

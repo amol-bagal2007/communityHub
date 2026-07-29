@@ -1,11 +1,23 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 import streamlit as st
 from lib.supabase_client import SchemaClient
 
 from lib.auth import PROFILE_KEY, fetch_profile, get_profile
+from lib.event_responses import (
+    INTEREST_INTERESTED,
+    INTEREST_NOT_INTERESTED,
+    PARTICIPATION_ROLES,
+    interest_label,
+    load_event_responses,
+    load_my_event_response,
+    render_response_summary,
+    role_label,
+    upsert_event_response,
+)
+from lib.event_schedule import format_clock, format_event_schedule
 from lib.profile_utils import format_name, render_recommended_by_readonly
 from lib.member_groups import load_member_groups
 from lib.member_sub_groups import render_group_sub_group_fields
@@ -14,7 +26,7 @@ from lib.profile_update import (
     collect_profile_update_errors,
     profile_has_changes,
 )
-from lib.roles import ROLE_TENANT, SIGNUP_ROLES, is_owner, role_label
+from lib.roles import ROLE_TENANT, SIGNUP_ROLES, is_owner, role_label as member_role_label
 from lib.tenant_utils import parse_profile_date
 from lib.titles import TITLE_OPTIONS
 from lib.user_demographics import MAX_AGE, MIN_AGE, SEX_OPTIONS
@@ -54,11 +66,13 @@ def _render_events(client: SchemaClient, profile: dict) -> None:
         st.info("No society linked to your profile.")
         return
 
+    today_start = datetime.combine(date.today(), time.min).astimezone()
     events = (
         client.table("events")
         .select("*")
         .eq("society_id", society_id)
         .eq("is_published", True)
+        .gte("event_date", today_start.isoformat())
         .order("event_date")
         .execute()
         .data
@@ -66,28 +80,107 @@ def _render_events(client: SchemaClient, profile: dict) -> None:
     )
 
     if not events:
-        st.info("No published events yet. Check back later!")
+        st.info("No events from today onwards yet. Check back later!")
         return
 
-    now = datetime.now().astimezone()
     for event in events:
         event_dt = datetime.fromisoformat(event["event_date"].replace("Z", "+00:00"))
-        is_past = event_dt < now
+        open_key = f"user_event_open_{event['id']}"
+        pending_key = f"user_event_pending_interest_{event['id']}"
+
         with st.container(border=True):
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                st.markdown(f"### {event['title']}")
-                if event.get("description"):
-                    st.write(event["description"])
-                st.caption(
-                    f"📅 {event_dt.strftime('%a, %d %b %Y · %I:%M %p')}  "
-                    f"| 📍 {event.get('location') or 'TBA'}"
+            summary, action = st.columns([5, 1])
+            summary.markdown(f"**{event['title']}**")
+            summary.caption(
+                f"📅 {event_dt.strftime('%a, %d %b %Y')} · "
+                f"{format_event_schedule(event)}  "
+                f"| 📍 {event.get('location') or 'TBA'}"
+            )
+            if action.button(
+                "Hide" if st.session_state.get(open_key) else "View",
+                key=f"user_event_view_{event['id']}",
+                use_container_width=True,
+            ):
+                st.session_state[open_key] = not st.session_state.get(open_key, False)
+                st.rerun()
+
+            if not st.session_state.get(open_key):
+                continue
+
+            st.write(
+                f"**From:** {format_clock(event_dt.time())}  ·  "
+                f"**To:** {format_clock(event.get('end_time'))}"
+            )
+            if event.get("break_start_time") and event.get("break_end_time"):
+                st.write(
+                    f"**Break:** {format_clock(event.get('break_start_time'))} – "
+                    f"{format_clock(event.get('break_end_time'))}"
                 )
-            with col2:
-                if is_past:
-                    st.markdown("Past")
-                else:
-                    st.success("Upcoming")
+            if event.get("description"):
+                st.write(event["description"])
+
+            my_response = load_my_event_response(client, event["id"], profile["id"])
+            if my_response:
+                st.info(
+                    f"Your response: {interest_label(my_response.get('interest'))}"
+                    + (
+                        f" · {role_label(my_response.get('participation_role'))}"
+                        if my_response.get("participation_role")
+                        else ""
+                    )
+                )
+
+            c1, c2 = st.columns(2)
+            if c1.button("Interested", key=f"event_interested_{event['id']}"):
+                st.session_state[pending_key] = INTEREST_INTERESTED
+                st.rerun()
+            if c2.button("Not Interested", key=f"event_not_interested_{event['id']}"):
+                try:
+                    upsert_event_response(
+                        client,
+                        event_id=event["id"],
+                        user_id=profile["id"],
+                        interest=INTEREST_NOT_INTERESTED,
+                        participation_role=None,
+                    )
+                    st.session_state.pop(pending_key, None)
+                    st.success("Marked as Not Interested.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Could not save response: {exc}")
+
+            if st.session_state.get(pending_key) == INTEREST_INTERESTED:
+                st.markdown("**How would you like to participate?**")
+                participation = st.radio(
+                    "Participation role *",
+                    PARTICIPATION_ROLES,
+                    format_func=role_label,
+                    horizontal=True,
+                    key=f"event_role_{event['id']}",
+                )
+                if st.button(
+                    "Confirm Interest",
+                    type="primary",
+                    key=f"event_confirm_interest_{event['id']}",
+                ):
+                    try:
+                        upsert_event_response(
+                            client,
+                            event_id=event["id"],
+                            user_id=profile["id"],
+                            interest=INTEREST_INTERESTED,
+                            participation_role=participation,
+                        )
+                        st.session_state.pop(pending_key, None)
+                        st.success(
+                            f"Marked as Interested ({role_label(participation)})."
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Could not save response: {exc}")
+
+            responses = load_event_responses(client, event["id"])
+            render_response_summary(responses)
 
 
 def _render_vendors(client: SchemaClient, profile: dict) -> None:
@@ -151,9 +244,22 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
         added_by = format_name(vendor.get("profiles"), "Community")
         can_edit = vendor.get("added_by") == profile["id"]
         vendor_label = format_name(vendor, "Vendor")
+        open_key = f"user_vendor_open_{vendor['id']}"
 
         with st.container(border=True):
-            st.markdown(f"**{vendor_label}** — {category_display_name(vendor)}")
+            summary, action = st.columns([5, 1])
+            summary.markdown(f"**{vendor_label}** — {category_display_name(vendor)}")
+            if action.button(
+                "Hide" if st.session_state.get(open_key) else "View",
+                key=f"user_vendor_view_{vendor['id']}",
+                use_container_width=True,
+            ):
+                st.session_state[open_key] = not st.session_state.get(open_key, False)
+                st.rerun()
+
+            if not st.session_state.get(open_key):
+                continue
+
             st.caption(f"Added by {added_by}")
             if vendor.get("recommended_by"):
                 st.caption(f"Recommended by {vendor['recommended_by']}")
@@ -304,7 +410,7 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
     role = st.selectbox(
         "I am a *",
         SIGNUP_ROLES,
-        format_func=role_label,
+        format_func=member_role_label,
         index=0 if is_owner(profile.get("role")) else 1,
         key="profile_role",
     )

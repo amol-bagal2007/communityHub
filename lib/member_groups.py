@@ -38,7 +38,7 @@ def render_group_select(
         default_index = options.index(current_group_id)
 
     selectbox_kwargs = {
-        "label": "Group",
+        "label": "Group (optional)",
         "options": options,
         "index": default_index,
         "format_func": lambda value: (

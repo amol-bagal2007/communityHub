@@ -5,6 +5,9 @@ import streamlit as st
 from lib.member_groups import render_group_select
 from lib.supabase_client import SchemaClient
 
+# Set True to show Group / Sub-Group selectors on signup, profile, and admin user forms.
+SHOW_MEMBER_GROUP_FIELDS = False
+
 
 def load_member_sub_groups(
     client: SchemaClient,
@@ -55,7 +58,7 @@ def render_sub_group_select(
         default_index = options.index(current_sub_group_id)
 
     selected_id = st.selectbox(
-        "Sub-Group",
+        "Sub-Group (optional)",
         options,
         index=default_index,
         format_func=lambda value: (
@@ -77,7 +80,10 @@ def render_group_sub_group_fields(
     current_group_id: str | None = None,
     current_sub_group_id: str | None = None,
 ) -> tuple[str | None, str | None]:
-    """Group + dependent Sub-Group selectors (Sub-Group list updates when Group changes)."""
+    """Group + dependent Sub-Group selectors (optional; hidden when flag is off)."""
+    if not SHOW_MEMBER_GROUP_FIELDS:
+        # Preserve existing assignments while fields are hidden.
+        return current_group_id, current_sub_group_id
 
     def _reset_sub_group() -> None:
         st.session_state[sub_group_key] = ""
