@@ -5,6 +5,7 @@ from datetime import date, datetime, time
 import streamlit as st
 from lib.supabase_client import SchemaClient
 
+from lib.admin_password_reset import admin_reset_user_password
 from lib.auth import get_profile
 from lib.event_responses import (
     interest_counts_caption,
@@ -510,6 +511,37 @@ def _render_users_crud(client: SchemaClient) -> None:
             client.table("profiles").delete().eq("id", edit_id).execute()
             st.success("User profile deleted.")
             st.rerun()
+
+        st.divider()
+        st.markdown("**Reset Password (temporary)**")
+        st.caption(
+            "Set a new temporary password for this user without email. "
+            "Share it securely and ask them to change it after login if needed. "
+            "Requires `SUPABASE_SERVICE_ROLE_KEY` in `.env`."
+        )
+        with st.form(f"admin_reset_password_{edit_id}"):
+            new_password = st.text_input(
+                "New temporary password *",
+                type="password",
+                help="At least 7 characters with at least one letter and one number.",
+            )
+            confirm_password = st.text_input("Confirm temporary password *", type="password")
+            reset_clicked = st.form_submit_button("Reset Password", type="primary")
+
+        if reset_clicked:
+            if not new_password:
+                st.error("Temporary password is required.")
+            elif new_password != confirm_password:
+                st.error("Passwords do not match.")
+            else:
+                err = admin_reset_user_password(edit_id, new_password)
+                if err:
+                    st.error(err)
+                else:
+                    st.success(
+                        f"Password reset for {format_name(user)} ({user.get('email')}). "
+                        "Share the temporary password with them securely."
+                    )
 
 
 def _render_member_groups_crud(client: SchemaClient) -> None:

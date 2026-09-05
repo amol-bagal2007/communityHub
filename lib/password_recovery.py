@@ -66,7 +66,10 @@ def try_start_recovery_session(client: SchemaClient) -> bool:
 
 def render_forgot_password(client: SchemaClient) -> None:
     st.subheader("Forgot Password")
-    st.caption("Enter your email and we will send a password reset link.")
+    st.caption(
+        "Enter your email for a reset link, or ask your society admin to set a "
+        "temporary password for you (no email needed)."
+    )
 
     with st.form("forgot_password_form"):
         email = st.text_input("Email", placeholder="you@example.com")
@@ -83,10 +86,14 @@ def render_forgot_password(client: SchemaClient) -> None:
             )
             st.success(
                 "If an account exists for that email, a reset link has been sent. "
-                "Check your inbox and spam folder."
+                "Check your inbox and spam folder. "
+                "If you do not receive it, ask an admin to reset your password."
             )
         except Exception as exc:
-            st.error(f"Could not send reset link: {exc}")
+            st.error(
+                f"Could not send reset link: {exc}. "
+                "Ask your society admin to reset your password from Admin → Users."
+            )
 
 
 def render_reset_password(client: SchemaClient) -> None:

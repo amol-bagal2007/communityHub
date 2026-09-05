@@ -67,6 +67,7 @@ Short version:
    - **Site URL:** your app URL (e.g. `http://localhost:8501` or production HTTPS URL)
    - **Redirect URLs:** add the same URL(s), e.g. `http://localhost:8501`, `https://your-app.streamlit.app`
 2. Users use the **Forgot Password** tab → receive email → click link → set a new password in the app.
+3. **Preferred free workaround:** Admin → Users → select user → **Reset Password (temporary)** sets a new password without email (requires `SUPABASE_SERVICE_ROLE_KEY`).
 
 
 ### Password rules (Supabase vs app)
