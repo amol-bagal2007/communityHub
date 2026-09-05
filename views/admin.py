@@ -25,6 +25,12 @@ from lib.member_sub_groups import (
     render_group_sub_group_fields,
     sub_group_display_name,
 )
+from lib.password_reset_requests import (
+    cancel_password_reset_request,
+    complete_password_reset_request,
+    load_pending_password_reset_requests,
+    whatsapp_chat_url,
+)
 from lib.profile_update import collect_profile_update_errors
 from lib.profile_utils import format_name, render_recommended_by_field
 from lib.roles import ROLE_TENANT, SIGNUP_ROLES, is_owner, role_label
@@ -128,8 +134,94 @@ def _on_admin_add_society_change() -> None:
     st.session_state.admin_add_user_tower = ""
 
 
+def _render_password_reset_requests(client: SchemaClient) -> None:
+    admin = get_profile() or {}
+    st.markdown("**Password Reset Requests**")
+    st.caption(
+        "Users who requested a password reset from the login screen. "
+        "Reset one by one, then share the temporary password on WhatsApp."
+    )
+
+    try:
+        requests = load_pending_password_reset_requests(client)
+    except Exception as exc:
+        st.warning(
+            f"Could not load password reset requests (table may need migration 019): {exc}"
+        )
+        return
+
+    if not requests:
+        st.info("No pending password reset requests.")
+        return
+
+    for req in requests:
+        profile = req.get("profiles") or {}
+        display_name = format_name(profile, req.get("email") or "User")
+        created = req.get("created_at") or ""
+        created_label = str(created)[:19].replace("T", " ")
+        wa = req.get("whatsapp_number") or ""
+
+        with st.container(border=True):
+            st.markdown(f"**{display_name}**")
+            st.caption(f"Email: {req.get('email')} · Requested: {created_label}")
+            st.write(f"WhatsApp: `{wa}`")
+            st.markdown(f"[Open WhatsApp chat]({whatsapp_chat_url(wa)})")
+
+            with st.form(f"admin_handle_reset_{req['id']}"):
+                new_password = st.text_input(
+                    "New temporary password *",
+                    type="password",
+                    help="At least 7 characters with at least one letter and one number.",
+                    key=f"reset_pwd_{req['id']}",
+                )
+                confirm_password = st.text_input(
+                    "Confirm temporary password *",
+                    type="password",
+                    key=f"reset_pwd_confirm_{req['id']}",
+                )
+                c1, c2 = st.columns(2)
+                reset_clicked = c1.form_submit_button("Reset Password", type="primary")
+                cancel_clicked = c2.form_submit_button("Dismiss Request")
+
+            if reset_clicked:
+                if not new_password:
+                    st.error("Temporary password is required.")
+                elif new_password != confirm_password:
+                    st.error("Passwords do not match.")
+                else:
+                    err = complete_password_reset_request(
+                        client,
+                        request=req,
+                        new_password=new_password,
+                        admin_id=admin.get("id"),
+                    )
+                    if err:
+                        st.error(err)
+                    else:
+                        st.success(
+                            f"Password reset for {display_name}. "
+                            f"Share it on WhatsApp ({wa})."
+                        )
+                        st.rerun()
+
+            if cancel_clicked:
+                err = cancel_password_reset_request(
+                    client,
+                    request_id=req["id"],
+                    admin_id=admin.get("id"),
+                )
+                if err:
+                    st.error(err)
+                else:
+                    st.info("Request dismissed.")
+                    st.rerun()
+
+
 def _render_users_crud(client: SchemaClient) -> None:
     st.subheader("Manage Users")
+
+    _render_password_reset_requests(client)
+    st.divider()
 
     if SHOW_MEMBER_GROUP_FIELDS:
         _render_member_groups_crud(client)

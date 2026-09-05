@@ -4,13 +4,16 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from lib.auth import clear_session, set_session
-from lib.supabase_client import SchemaClient, _secret
+from lib.password_reset_requests import submit_password_reset_request
+from lib.supabase_client import SchemaClient
 from lib.validation import validate_password
 
 RECOVERY_FLAG = "password_recovery_active"
 
 
 def get_app_redirect_url() -> str:
+    from lib.supabase_client import _secret
+
     return _secret("APP_URL", "http://localhost:8501").rstrip("/")
 
 
@@ -67,33 +70,36 @@ def try_start_recovery_session(client: SchemaClient) -> bool:
 def render_forgot_password(client: SchemaClient) -> None:
     st.subheader("Forgot Password")
     st.caption(
-        "Enter your email for a reset link, or ask your society admin to set a "
-        "temporary password for you (no email needed)."
+        "Request your society admin to reset your password. "
+        "Provide your registered email and WhatsApp mobile number so the admin can contact you."
     )
 
     with st.form("forgot_password_form"):
-        email = st.text_input("Email", placeholder="you@example.com")
-        submitted = st.form_submit_button("Send reset link", type="primary", use_container_width=True)
+        email = st.text_input("Registered Email *", placeholder="you@example.com")
+        whatsapp = st.text_input(
+            "WhatsApp Mobile Number *",
+            placeholder="e.g. 9876543210 or +919876543210",
+            help="Required. Admin will use this number to share your temporary password.",
+        )
+        submitted = st.form_submit_button(
+            "Request Admin For Password Reset",
+            type="primary",
+            use_container_width=True,
+        )
 
     if submitted:
-        if not email.strip():
-            st.error("Email is required.")
+        err = submit_password_reset_request(
+            client,
+            email=email,
+            whatsapp_number=whatsapp,
+        )
+        if err:
+            st.error(err)
             return
-        try:
-            client.auth.reset_password_for_email(
-                email.strip(),
-                {"redirect_to": get_app_redirect_url()},
-            )
-            st.success(
-                "If an account exists for that email, a reset link has been sent. "
-                "Check your inbox and spam folder. "
-                "If you do not receive it, ask an admin to reset your password."
-            )
-        except Exception as exc:
-            st.error(
-                f"Could not send reset link: {exc}. "
-                "Ask your society admin to reset your password from Admin → Users."
-            )
+        st.success(
+            "Your request has been sent to Admin for review & action. "
+            "Please wait — the admin will reset your password and contact you on WhatsApp."
+        )
 
 
 def render_reset_password(client: SchemaClient) -> None:
@@ -107,7 +113,9 @@ def render_reset_password(client: SchemaClient) -> None:
             help="At least 7 characters with at least one letter and one number.",
         )
         confirm = st.text_input("Confirm New Password", type="password")
-        submitted = st.form_submit_button("Update password", type="primary", use_container_width=True)
+        submitted = st.form_submit_button(
+            "Update password", type="primary", use_container_width=True
+        )
 
     if submitted:
         errors = []

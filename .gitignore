@@ -8,3 +8,5 @@ venv/
 .streamlit/secrets.toml
 *.pem
 *.key
+
+supabase/.temp/

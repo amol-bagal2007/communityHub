@@ -61,13 +61,13 @@ Short version:
 3. Add Secrets (`SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SCHEMA`, `APP_URL`)
 4. Deploy, then set Supabase Auth redirect URLs to your `*.streamlit.app` URL
 
-### Forgot password setup (Supabase Dashboard)
+### Forgot password setup
 
-1. **Authentication → URL Configuration**
-   - **Site URL:** your app URL (e.g. `http://localhost:8501` or production HTTPS URL)
-   - **Redirect URLs:** add the same URL(s), e.g. `http://localhost:8501`, `https://your-app.streamlit.app`
-2. Users use the **Forgot Password** tab → receive email → click link → set a new password in the app.
-3. **Preferred free workaround:** Admin → Users → select user → **Reset Password (temporary)** sets a new password without email (requires `SUPABASE_SERVICE_ROLE_KEY`).
+1. Users open **Forgot Password?** on the login screen.
+2. They enter **registered email** + **WhatsApp mobile number** and click **Request Admin For Password Reset**.
+3. Admin → **Users** → **Password Reset Requests** shows each pending request.
+4. Admin sets a temporary password one by one, then shares it with the user on WhatsApp.
+5. Requires migration `019_password_reset_requests.sql` and `SUPABASE_SERVICE_ROLE_KEY` for the actual Auth password update.
 
 
 ### Password rules (Supabase vs app)
