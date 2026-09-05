@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-import os
-
 import streamlit as st
 import streamlit.components.v1 as components
 
 from lib.auth import clear_session, set_session
-from lib.supabase_client import SchemaClient
+from lib.supabase_client import SchemaClient, _secret
 from lib.validation import validate_password
 
 RECOVERY_FLAG = "password_recovery_active"
 
 
 def get_app_redirect_url() -> str:
-    return os.getenv("APP_URL", "http://localhost:8501").rstrip("/")
+    return _secret("APP_URL", "http://localhost:8501").rstrip("/")
 
 
 def inject_recovery_url_handler() -> None:

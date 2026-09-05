@@ -6,7 +6,11 @@ import streamlit as st
 from lib.supabase_client import SchemaClient
 
 from lib.auth import get_profile
-from lib.event_responses import load_event_responses, render_response_summary
+from lib.event_responses import (
+    interest_counts_caption,
+    load_event_responses,
+    render_response_summary,
+)
 from lib.event_schedule import (
     build_event_schedule_payload,
     format_event_schedule,
@@ -926,6 +930,13 @@ def _render_events_crud(client: SchemaClient) -> None:
         or []
     )
 
+    if not events:
+        st.info("No events yet. Create one above.")
+        return
+
+    st.markdown("**Existing Events**")
+    st.caption("Open an event to update or delete it, and to see interest responses.")
+
     for event in events:
         society = (event.get("societies") or {}).get("name", "—")
         status = "Published" if event.get("is_published") else "Draft"
@@ -937,6 +948,8 @@ def _render_events_crud(client: SchemaClient) -> None:
                 event.get("break_start_time") and event.get("break_end_time")
             )
 
+        responses = load_event_responses(client, event["id"])
+
         with st.container(border=True):
             summary, action = st.columns([5, 1])
             summary.markdown(f"**{event['title']}** — {status}")
@@ -944,8 +957,9 @@ def _render_events_crud(client: SchemaClient) -> None:
                 f"Society: {society} · {event_dt.strftime('%a, %d %b %Y')} · "
                 f"{format_event_schedule(event)}"
             )
+            summary.caption(interest_counts_caption(responses))
             if action.button(
-                "Hide" if st.session_state.get(open_key) else "View",
+                "Hide" if st.session_state.get(open_key) else "View / Edit",
                 key=f"admin_event_view_{event['id']}",
                 use_container_width=True,
             ):
@@ -960,9 +974,9 @@ def _render_events_crud(client: SchemaClient) -> None:
             if event.get("description"):
                 st.write(event["description"])
 
-            responses = load_event_responses(client, event["id"])
             render_response_summary(responses)
 
+            st.markdown("**Update / Delete Event**")
             include_break_edit = st.checkbox(
                 "Include Break",
                 key=edit_break_key,
@@ -1019,20 +1033,24 @@ def _render_events_crud(client: SchemaClient) -> None:
                 )
                 ep = st.checkbox("Published", value=event.get("is_published", False))
                 c1, c2 = st.columns(2)
-                if c1.form_submit_button("Update"):
-                    errors = validate_event_schedule(
-                        from_time=edit_from,
-                        to_time=edit_to,
-                        include_break=include_break_edit,
-                        break_from=edit_break_from,
-                        break_to=edit_break_to,
-                    )
-                    if not et.strip():
-                        errors.append("Title is required.")
-                    if errors:
-                        for err in errors:
-                            st.error(err)
-                    else:
+                update_clicked = c1.form_submit_button("Update Event", type="primary")
+                delete_clicked = c2.form_submit_button("Delete Event")
+
+            if update_clicked:
+                errors = validate_event_schedule(
+                    from_time=edit_from,
+                    to_time=edit_to,
+                    include_break=include_break_edit,
+                    break_from=edit_break_from,
+                    break_to=edit_break_to,
+                )
+                if not et.strip():
+                    errors.append("Title is required.")
+                if errors:
+                    for err in errors:
+                        st.error(err)
+                else:
+                    try:
                         schedule = build_event_schedule_payload(
                             event_date=edit_date,
                             from_time=edit_from,
@@ -1050,7 +1068,16 @@ def _render_events_crud(client: SchemaClient) -> None:
                                 **schedule,
                             }
                         ).eq("id", event["id"]).execute()
+                        st.success("Event updated.")
                         st.rerun()
-                if c2.form_submit_button("Delete"):
+                    except Exception as exc:
+                        st.error(f"Could not update event: {exc}")
+
+            if delete_clicked:
+                try:
                     client.table("events").delete().eq("id", event["id"]).execute()
+                    st.session_state.pop(open_key, None)
+                    st.success("Event deleted.")
                     st.rerun()
+                except Exception as exc:
+                    st.error(f"Could not delete event: {exc}")

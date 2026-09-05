@@ -49,6 +49,18 @@ APP_URL=http://localhost:8501
 
 `APP_URL` is used for password reset email links. In production, set this to your deployed HTTPS URL.
 
+## Deploy (free)
+
+**Do not use Vercel** for this app — Streamlit needs a long-running Python server with WebSockets; Vercel free hosting does not support that.
+
+Use **Streamlit Community Cloud** (free) instead. Full steps: see [`DEPLOY.md`](DEPLOY.md).
+
+Short version:
+1. Push to GitHub (never commit `.env`)
+2. Go to [share.streamlit.io](https://share.streamlit.io) → New app → this repo → `app.py`
+3. Add Secrets (`SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SCHEMA`, `APP_URL`)
+4. Deploy, then set Supabase Auth redirect URLs to your `*.streamlit.app` URL
+
 ### Forgot password setup (Supabase Dashboard)
 
 1. **Authentication → URL Configuration**

@@ -115,22 +115,56 @@ def summarize_responses(responses: list[dict]) -> dict[str, list[str]]:
     }
 
 
+def interest_counts(responses: list[dict]) -> dict[str, int]:
+    summary = summarize_responses(responses)
+    return {
+        "interested": len(summary["interested"]),
+        "not_interested": len(summary["not_interested"]),
+        "contributors": len(summary["contributors"]),
+        "volunteers": len(summary["volunteers"]),
+        "total": len(responses),
+    }
+
+
+def interest_counts_caption(responses: list[dict]) -> str:
+    counts = interest_counts(responses)
+    return (
+        f"Interested: {counts['interested']} · "
+        f"Not Interested: {counts['not_interested']}"
+    )
+
+
 def render_response_summary(responses: list[dict]) -> None:
     import streamlit as st
 
     summary = summarize_responses(responses)
-    st.markdown("**Society responses**")
-    st.caption(
-        f"Interested: {len(summary['interested'])} · "
-        f"Not Interested: {len(summary['not_interested'])} · "
-        f"Contributors: {len(summary['contributors'])} · "
-        f"Volunteers: {len(summary['volunteers'])}"
-    )
-    if summary["contributors"]:
-        st.write("Contributors: " + ", ".join(summary["contributors"]))
-    if summary["volunteers"]:
-        st.write("Volunteers: " + ", ".join(summary["volunteers"]))
-    if summary["not_interested"]:
-        st.write("Not Interested: " + ", ".join(summary["not_interested"]))
+    interested_count = len(summary["interested"])
+    not_interested_count = len(summary["not_interested"])
+
+    st.markdown("**Response summary**")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Interested", interested_count)
+    c2.metric("Not Interested", not_interested_count)
+    c3.metric("Total responses", len(responses))
+
     if not responses:
-        st.caption("No responses yet.")
+        st.caption("No responses submitted yet.")
+        return
+
+    if summary["interested"]:
+        st.write(f"**Interested ({interested_count}):** " + ", ".join(summary["interested"]))
+    if summary["not_interested"]:
+        st.write(
+            f"**Not Interested ({not_interested_count}):** "
+            + ", ".join(summary["not_interested"])
+        )
+    if summary["contributors"]:
+        st.write(
+            f"**Contributors ({len(summary['contributors'])}):** "
+            + ", ".join(summary["contributors"])
+        )
+    if summary["volunteers"]:
+        st.write(
+            f"**Volunteers ({len(summary['volunteers'])}):** "
+            + ", ".join(summary["volunteers"])
+        )

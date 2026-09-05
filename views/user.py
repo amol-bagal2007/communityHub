@@ -10,6 +10,7 @@ from lib.event_responses import (
     INTEREST_INTERESTED,
     INTEREST_NOT_INTERESTED,
     PARTICIPATION_ROLES,
+    interest_counts_caption,
     interest_label,
     load_event_responses,
     load_my_event_response,
@@ -87,6 +88,7 @@ def _render_events(client: SchemaClient, profile: dict) -> None:
         event_dt = datetime.fromisoformat(event["event_date"].replace("Z", "+00:00"))
         open_key = f"user_event_open_{event['id']}"
         pending_key = f"user_event_pending_interest_{event['id']}"
+        responses = load_event_responses(client, event["id"])
 
         with st.container(border=True):
             summary, action = st.columns([5, 1])
@@ -96,6 +98,7 @@ def _render_events(client: SchemaClient, profile: dict) -> None:
                 f"{format_event_schedule(event)}  "
                 f"| 📍 {event.get('location') or 'TBA'}"
             )
+            summary.caption(interest_counts_caption(responses))
             if action.button(
                 "Hide" if st.session_state.get(open_key) else "View",
                 key=f"user_event_view_{event['id']}",
@@ -118,6 +121,8 @@ def _render_events(client: SchemaClient, profile: dict) -> None:
                 )
             if event.get("description"):
                 st.write(event["description"])
+
+            render_response_summary(responses)
 
             my_response = load_my_event_response(client, event["id"], profile["id"])
             if my_response:
@@ -178,9 +183,6 @@ def _render_events(client: SchemaClient, profile: dict) -> None:
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Could not save response: {exc}")
-
-            responses = load_event_responses(client, event["id"])
-            render_response_summary(responses)
 
 
 def _render_vendors(client: SchemaClient, profile: dict) -> None:

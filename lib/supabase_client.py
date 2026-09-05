@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 from typing import Any
 
@@ -6,10 +8,28 @@ from supabase import Client, create_client
 
 load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
-SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-SCHEMA = os.getenv("SUPABASE_SCHEMA", "community_hub")
+
+def _secret(name: str, default: str = "") -> str:
+    """Read from environment first, then Streamlit secrets (Community Cloud)."""
+    value = os.getenv(name, "")
+    if value:
+        return value
+    try:
+        import streamlit as st
+
+        secrets = st.secrets
+        if name in secrets:
+            return str(secrets[name])
+    except Exception:
+        pass
+    return default
+
+
+SUPABASE_URL = _secret("SUPABASE_URL")
+SUPABASE_KEY = _secret("SUPABASE_KEY")
+SUPABASE_SERVICE_ROLE_KEY = _secret("SUPABASE_SERVICE_ROLE_KEY")
+SCHEMA = _secret("SUPABASE_SCHEMA", "community_hub")
+APP_URL = _secret("APP_URL", "http://localhost:8501")
 
 
 class SchemaClient:
@@ -32,22 +52,29 @@ class SchemaClient:
 
 
 def get_client() -> SchemaClient:
-    if not SUPABASE_URL or not SUPABASE_KEY:
+    url = _secret("SUPABASE_URL")
+    key = _secret("SUPABASE_KEY")
+    schema = _secret("SUPABASE_SCHEMA", "community_hub")
+    if not url or not key:
         raise RuntimeError(
-            "Set SUPABASE_URL and SUPABASE_KEY in .env (copy from .env.example)."
+            "Set SUPABASE_URL and SUPABASE_KEY in .env (local) or Streamlit Secrets (cloud)."
         )
-    return SchemaClient(create_client(SUPABASE_URL, SUPABASE_KEY), SCHEMA)
+    return SchemaClient(create_client(url, key), schema)
 
 
 def get_service_client() -> SchemaClient:
     """
     Service-role client for admin-only server actions (e.g., creating users).
 
-    IMPORTANT: Keep SUPABASE_SERVICE_ROLE_KEY only in local/server env (.env),
-    never commit it. This bypasses RLS.
+    IMPORTANT: Keep SUPABASE_SERVICE_ROLE_KEY only in local/server env (.env)
+    or Streamlit Secrets — never commit it. This bypasses RLS.
     """
-    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+    url = _secret("SUPABASE_URL")
+    service_key = _secret("SUPABASE_SERVICE_ROLE_KEY")
+    schema = _secret("SUPABASE_SCHEMA", "community_hub")
+    if not url or not service_key:
         raise RuntimeError(
-            "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env to use admin user creation."
+            "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env or Streamlit Secrets "
+            "to use admin user creation."
         )
-    return SchemaClient(create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY), SCHEMA)
+    return SchemaClient(create_client(url, service_key), schema)
