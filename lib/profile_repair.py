@@ -70,7 +70,22 @@ def try_repair_orphan_profile(
             "status": "pending",
             "staying_within_society": bool(metadata.get("staying_within_society")),
             "tenant_expiry_date": metadata.get("tenant_expiry_date"),
+            "parking_number": metadata.get("parking_number"),
+            "parking_floor": metadata.get("parking_floor"),
+            "parking_share_mode": metadata.get("parking_share_mode"),
+            "parking_availability_value": metadata.get("parking_availability_value"),
+            "parking_availability_unit": metadata.get("parking_availability_unit"),
+            "parking_charges": metadata.get("parking_charges"),
+            "bio": metadata.get("bio"),
+            "group_interests": metadata.get("group_interests"),
+            "disclaimer_accepted": bool(metadata.get("disclaimer_accepted")),
+            "disclaimer_accepted_at": metadata.get("disclaimer_accepted_at"),
+            "disclaimer_version": metadata.get("disclaimer_version"),
         }
+        if profile.get("disclaimer_accepted") and not profile.get("disclaimer_accepted_at"):
+            from datetime import datetime, timezone
+
+            profile["disclaimer_accepted_at"] = datetime.now(timezone.utc).isoformat()
         svc.table("profiles").insert(profile).execute()
         return True
     except Exception:

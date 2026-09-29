@@ -22,6 +22,10 @@ from lib.event_schedule import format_clock, format_event_schedule
 from lib.profile_utils import format_name, render_recommended_by_readonly
 from lib.member_groups import load_member_groups
 from lib.member_sub_groups import render_group_sub_group_fields
+from lib.profile_extended_fields import (
+    render_extended_profile_fields,
+    validate_extended_profile_fields,
+)
 from lib.profile_update import (
     build_profile_update_payload,
     collect_profile_update_errors,
@@ -29,12 +33,24 @@ from lib.profile_update import (
 )
 from lib.roles import ROLE_TENANT, SIGNUP_ROLES, is_owner, role_label as member_role_label
 from lib.tenant_utils import parse_profile_date
-from lib.titles import TITLE_OPTIONS
-from lib.user_demographics import MAX_AGE, MIN_AGE, SEX_OPTIONS
+from lib.titles import TITLE_OPTIONS, is_valid_title
+from lib.user_demographics import MAX_AGE, MIN_AGE, SEX_OPTIONS, normalize_age, sex_age_validation_errors
+from lib.validation import validate_password
 from lib.vendor_categories import (
     category_display_name,
     load_vendor_categories,
     render_category_select,
+)
+from lib.vendor_ratings import (
+    ensure_vendor_recommendation,
+    feedback_caption,
+    find_my_rating,
+    load_vendor_ratings,
+    load_vendor_recommendations,
+    render_rating_form,
+    render_vendor_reviews,
+    summarize_vendor_feedback,
+    user_has_recommended,
 )
 
 
@@ -43,8 +59,8 @@ def render_user_dashboard(client: SchemaClient) -> None:
     st.title("CommunityHub")
     st.caption(f"Welcome, {format_name(profile, 'Resident')}")
 
-    tab_events, tab_vendors, tab_society, tab_profile = st.tabs(
-        ["Events", "Vendors", "My Society", "Profile"]
+    tab_events, tab_vendors, tab_society = st.tabs(
+        ["Events", "Vendors", "My Society"]
     )
 
     with tab_events:
@@ -56,8 +72,10 @@ def render_user_dashboard(client: SchemaClient) -> None:
     with tab_society:
         _render_society_info(client, profile)
 
-    with tab_profile:
-        _render_profile(client, profile)
+
+def render_profile_page(client: SchemaClient, profile: dict) -> None:
+    """Public entry point for the sidebar Profile screen."""
+    _render_profile(client, profile)
 
 
 def _render_events(client: SchemaClient, profile: dict) -> None:
@@ -212,19 +230,31 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
                 elif not category_id:
                     st.error("Select a category.")
                 else:
-                    client.table("vendors").insert(
-                        {
-                            "first_name": first_name.strip(),
-                            "last_name": last_name.strip(),
-                            "recommended_by": recommender_name,
-                            "category_id": category_id,
-                            "contact_phone": phone.strip() or None,
-                            "contact_email": email.strip() or None,
-                            "description": description.strip() or None,
-                            "society_id": society_id,
-                            "added_by": profile["id"],
-                        }
-                    ).execute()
+                    inserted = (
+                        client.table("vendors")
+                        .insert(
+                            {
+                                "first_name": first_name.strip(),
+                                "last_name": last_name.strip(),
+                                "recommended_by": recommender_name,
+                                "category_id": category_id,
+                                "contact_phone": phone.strip() or None,
+                                "contact_email": email.strip() or None,
+                                "description": description.strip() or None,
+                                "society_id": society_id,
+                                "added_by": profile["id"],
+                            }
+                        )
+                        .execute()
+                        .data
+                        or []
+                    )
+                    if inserted:
+                        ensure_vendor_recommendation(
+                            client,
+                            vendor_id=inserted[0]["id"],
+                            user_id=profile["id"],
+                        )
                     st.success("Vendor added!")
                     st.rerun()
 
@@ -242,15 +272,33 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
         st.info("No vendors listed yet.")
         return
 
+    vendor_ids = [v["id"] for v in vendors]
+    try:
+        ratings = load_vendor_ratings(client, vendor_ids)
+        recommendations = load_vendor_recommendations(client, vendor_ids)
+        feedback = summarize_vendor_feedback(ratings, recommendations)
+    except Exception as exc:
+        st.warning(
+            f"Vendor ratings/recommendations unavailable (run migration 022): {exc}"
+        )
+        ratings = []
+        feedback = {}
+
+    ratings_by_vendor: dict[str, list] = {}
+    for row in ratings:
+        ratings_by_vendor.setdefault(row["vendor_id"], []).append(row)
+
     for vendor in vendors:
         added_by = format_name(vendor.get("profiles"), "Community")
         can_edit = vendor.get("added_by") == profile["id"]
         vendor_label = format_name(vendor, "Vendor")
         open_key = f"user_vendor_open_{vendor['id']}"
+        summary_data = feedback.get(vendor["id"])
 
         with st.container(border=True):
             summary, action = st.columns([5, 1])
             summary.markdown(f"**{vendor_label}** — {category_display_name(vendor)}")
+            summary.caption(feedback_caption(summary_data))
             if action.button(
                 "Hide" if st.session_state.get(open_key) else "View",
                 key=f"user_vendor_view_{vendor['id']}",
@@ -264,7 +312,8 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
 
             st.caption(f"Added by {added_by}")
             if vendor.get("recommended_by"):
-                st.caption(f"Recommended by {vendor['recommended_by']}")
+                st.caption(f"Originally recommended by {vendor['recommended_by']}")
+            st.write(feedback_caption(summary_data))
             if vendor.get("contact_phone") or vendor.get("contact_email"):
                 st.write(
                     f"📞 {vendor.get('contact_phone') or '—'}  "
@@ -272,6 +321,35 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
                 )
             if vendor.get("description"):
                 st.write(vendor["description"])
+
+            if not user_has_recommended(summary_data, profile["id"]):
+                if st.button(
+                    "Recommend this Vendor",
+                    key=f"user_recommend_vendor_{vendor['id']}",
+                ):
+                    err = ensure_vendor_recommendation(
+                        client,
+                        vendor_id=vendor["id"],
+                        user_id=profile["id"],
+                    )
+                    if err:
+                        st.error(err)
+                    else:
+                        st.success("Thanks — you recommended this vendor.")
+                        st.rerun()
+            else:
+                st.caption("You have recommended this vendor.")
+
+            vendor_ratings = ratings_by_vendor.get(vendor["id"], [])
+            render_vendor_reviews(vendor_ratings)
+            my_rating = find_my_rating(vendor_ratings, profile["id"])
+            render_rating_form(
+                client,
+                vendor_id=vendor["id"],
+                user_id=profile["id"],
+                existing=my_rating,
+                key_prefix=f"user_vendor_{vendor['id']}",
+            )
 
             if can_edit:
                 with st.form(f"user_edit_vendor_{vendor['id']}"):
@@ -353,10 +431,23 @@ def _on_profile_society_change() -> None:
 
 
 def _render_profile(client: SchemaClient, profile: dict) -> None:
+    is_admin_user = profile.get("role") == "admin"
     st.subheader("My Profile")
     st.caption(
-        "You can update any field except Status. Saving changes sends your profile "
-        "to the admin for approval."
+        "User ID cannot be changed. "
+        + (
+            "Update your details below and save."
+            if is_admin_user
+            else "Saving changes (except password) sends your profile to the admin for approval."
+        )
+    )
+
+    st.text_input(
+        "User ID",
+        value=str(profile.get("id") or ""),
+        disabled=True,
+        help="System user id — not editable.",
+        key="profile_user_id_display",
     )
 
     groups = load_member_groups(client)
@@ -409,31 +500,37 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
     )
     selected_tower_id = tower_map.get(tower_name)
 
-    role = st.selectbox(
-        "I am a *",
-        SIGNUP_ROLES,
-        format_func=member_role_label,
-        index=0 if is_owner(profile.get("role")) else 1,
-        key="profile_role",
-    )
-
-    staying_within_society = False
-    if is_owner(role):
-        staying_within_society = st.checkbox(
-            "Staying within Society *",
-            value=bool(profile.get("staying_within_society")),
-            key="profile_staying_within_society",
+    if is_admin_user:
+        st.text_input("Role", value="Admin", disabled=True, key="profile_role_admin_display")
+        role = "admin"
+        staying_within_society = False
+        tenant_expiry = None
+    else:
+        role = st.selectbox(
+            "I am a *",
+            SIGNUP_ROLES,
+            format_func=member_role_label,
+            index=0 if is_owner(profile.get("role")) else 1,
+            key="profile_role",
         )
 
-    tenant_expiry = None
-    if role == ROLE_TENANT:
-        current_expiry = parse_profile_date(profile.get("tenant_expiry_date"))
-        tenant_expiry = st.date_input(
-            "Tenant Expiry Date *",
-            value=current_expiry or date.today(),
-            min_value=date.today(),
-            key="profile_tenant_expiry",
-        )
+        staying_within_society = False
+        if is_owner(role):
+            staying_within_society = st.checkbox(
+                "Staying within Society *",
+                value=bool(profile.get("staying_within_society")),
+                key="profile_staying_within_society",
+            )
+
+        tenant_expiry = None
+        if role == ROLE_TENANT:
+            current_expiry = parse_profile_date(profile.get("tenant_expiry_date"))
+            tenant_expiry = st.date_input(
+                "Tenant Expiry Date *",
+                value=current_expiry or date.today(),
+                min_value=date.today(),
+                key="profile_tenant_expiry",
+            )
 
     current_title = profile.get("title") or ""
     title_index = TITLE_OPTIONS.index(current_title) if current_title in TITLE_OPTIONS else 0
@@ -446,6 +543,10 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
         sub_group_key="profile_member_sub_group",
         current_group_id=profile.get("member_group_id"),
         current_sub_group_id=profile.get("member_sub_group_id"),
+    )
+    extended_fields = render_extended_profile_fields(
+        key_prefix="profile",
+        current=profile,
     )
 
     with st.form("update_profile"):
@@ -465,55 +566,122 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
             step=1,
         )
         phone = st.text_input("Phone", value=profile.get("phone") or "")
-        flat_number = st.text_input("Flat / Unit Number *", value=profile.get("flat_number") or "")
+        flat_number = st.text_input(
+            "Flat / Unit Number *" if not is_admin_user else "Flat / Unit Number",
+            value=profile.get("flat_number") or "",
+        )
         st.text_input("Status", value=(profile.get("status") or "").title(), disabled=True)
 
-        submitted = st.form_submit_button("Save & Submit for Approval", type="primary")
+        save_label = "Save Profile" if is_admin_user else "Save & Submit for Approval"
+        submitted = st.form_submit_button(save_label, type="primary")
+
+    st.markdown("**Change Password**")
+    st.caption("Optional. User ID stays the same; only your login password changes.")
+    with st.form("update_profile_password"):
+        new_password = st.text_input(
+            "New Password",
+            type="password",
+            help="At least 7 characters with at least one letter and one number.",
+        )
+        confirm_password = st.text_input("Confirm New Password", type="password")
+        password_submitted = st.form_submit_button("Update Password", type="secondary")
+
+    if password_submitted:
+        pwd_errors = []
+        pwd_error = validate_password(new_password)
+        if pwd_error:
+            pwd_errors.append(pwd_error)
+        if new_password != confirm_password:
+            pwd_errors.append("Passwords do not match.")
+        if pwd_errors:
+            for err in pwd_errors:
+                st.error(err)
+        else:
+            try:
+                client.auth.update_user({"password": new_password})
+                st.success("Password updated successfully.")
+            except Exception as exc:
+                st.error(f"Could not update password: {exc}")
 
     if submitted:
-        errors = collect_profile_update_errors(
-            title=title,
-            first_name=first_name,
-            last_name=last_name,
-            sex=sex,
-            age=age,
-            role=role,
-            flat_number=flat_number,
-            staying_within_society=staying_within_society,
-            tenant_expiry=tenant_expiry,
-            society_id=selected_society_id,
-            tower_id=selected_tower_id,
-            email=email,
-        )
-        if errors:
-            for err in errors:
-                st.error(err)
-            return
+        if is_admin_user:
+            errors = []
+            if not is_valid_title(title):
+                errors.append("Please select a title.")
+            if not first_name.strip():
+                errors.append("First name is required.")
+            if not last_name.strip():
+                errors.append("Last name is required.")
+            errors.extend(sex_age_validation_errors(sex, age))
+            if not email.strip():
+                errors.append("Email is required.")
+            errors.extend(validate_extended_profile_fields(extended_fields))
+            if errors:
+                for err in errors:
+                    st.error(err)
+                return
 
-        payload = build_profile_update_payload(
-            title=title,
-            first_name=first_name,
-            last_name=last_name,
-            sex=sex,
-            age=age,
-            phone=phone,
-            email=email,
-            member_group_id=member_group_id,
-            member_sub_group_id=member_sub_group_id,
-            role=role,
-            society_id=selected_society_id,
-            tower_id=selected_tower_id,
-            flat_number=flat_number,
-            staying_within_society=staying_within_society,
-            tenant_expiry=tenant_expiry,
-            for_reapproval=False,
-        )
+            payload = {
+                "title": title,
+                "first_name": first_name.strip(),
+                "last_name": last_name.strip(),
+                "sex": sex,
+                "age": normalize_age(age),
+                "phone": phone.strip() or None,
+                "email": email.strip(),
+                "member_group_id": member_group_id,
+                "member_sub_group_id": member_sub_group_id,
+                "society_id": selected_society_id,
+                "tower_id": selected_tower_id,
+                "flat_number": flat_number.strip() or None,
+                **extended_fields,
+            }
+        else:
+            errors = collect_profile_update_errors(
+                title=title,
+                first_name=first_name,
+                last_name=last_name,
+                sex=sex,
+                age=age,
+                role=role,
+                flat_number=flat_number,
+                staying_within_society=staying_within_society,
+                tenant_expiry=tenant_expiry,
+                society_id=selected_society_id,
+                tower_id=selected_tower_id,
+                email=email,
+                extended_fields=extended_fields,
+            )
+            if errors:
+                for err in errors:
+                    st.error(err)
+                return
 
-        if not profile_has_changes(profile, payload):
-            st.info("No changes to save.")
-            return
+            payload = build_profile_update_payload(
+                title=title,
+                first_name=first_name,
+                last_name=last_name,
+                sex=sex,
+                age=age,
+                phone=phone,
+                email=email,
+                member_group_id=member_group_id,
+                member_sub_group_id=member_sub_group_id,
+                role=role,
+                society_id=selected_society_id,
+                tower_id=selected_tower_id,
+                flat_number=flat_number,
+                staying_within_society=staying_within_society,
+                tenant_expiry=tenant_expiry,
+                for_reapproval=False,
+                extended_fields=extended_fields,
+            )
 
-        payload["status"] = "pending"
+            if not profile_has_changes(profile, payload):
+                st.info("No changes to save.")
+                return
+
+            payload["status"] = "pending"
 
         try:
             if email.strip().lower() != (profile.get("email") or "").lower():
@@ -531,5 +699,8 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
         refreshed = fetch_profile(client)
         if refreshed:
             st.session_state[PROFILE_KEY] = refreshed
-        st.success("Profile updated and sent to admin for approval.")
+        if is_admin_user:
+            st.success("Profile updated.")
+        else:
+            st.success("Profile updated and sent to admin for approval.")
         st.rerun()

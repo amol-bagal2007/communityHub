@@ -3,9 +3,21 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from lib.profile_extended_fields import validate_extended_profile_fields
 from lib.roles import ROLE_TENANT, is_owner
 from lib.titles import is_valid_title
 from lib.user_demographics import normalize_age, sex_age_validation_errors
+
+EXTENDED_KEYS = (
+    "parking_number",
+    "parking_floor",
+    "parking_share_mode",
+    "parking_availability_value",
+    "parking_availability_unit",
+    "parking_charges",
+    "bio",
+    "group_interests",
+)
 
 
 def collect_profile_update_errors(
@@ -22,6 +34,7 @@ def collect_profile_update_errors(
     society_id: str | None,
     tower_id: str | None,
     email: str,
+    extended_fields: dict[str, Any] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     if not is_valid_title(title):
@@ -43,6 +56,8 @@ def collect_profile_update_errors(
         errors.append("Owners must confirm that they are staying within the society.")
     if role == ROLE_TENANT and not tenant_expiry:
         errors.append("Tenant expiry date is required.")
+    if extended_fields:
+        errors.extend(validate_extended_profile_fields(extended_fields))
     return errors
 
 
@@ -64,6 +79,7 @@ def build_profile_update_payload(
     staying_within_society: bool,
     tenant_expiry: date | None,
     for_reapproval: bool,
+    extended_fields: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized_age = normalize_age(age)
     payload: dict[str, Any] = {
@@ -83,6 +99,8 @@ def build_profile_update_payload(
         "staying_within_society": staying_within_society if is_owner(role) else False,
         "tenant_expiry_date": tenant_expiry.isoformat() if role == ROLE_TENANT and tenant_expiry else None,
     }
+    if extended_fields:
+        payload.update(extended_fields)
     if for_reapproval:
         payload["status"] = "pending"
     return payload
@@ -106,6 +124,9 @@ def profile_has_changes(profile: dict, payload: dict[str, Any]) -> bool:
         "staying_within_society": payload.get("staying_within_society"),
         "tenant_expiry_date": payload.get("tenant_expiry_date"),
     }
+    for key in EXTENDED_KEYS:
+        comparable[key] = payload.get(key)
+
     for key, new_value in comparable.items():
         old_value = profile.get(key)
         if key == "tenant_expiry_date":
@@ -113,6 +134,16 @@ def profile_has_changes(profile: dict, payload: dict[str, Any]) -> bool:
             new_str = str(new_value)[:10] if new_value else None
             if old_str != new_str:
                 return True
+            continue
+        if key == "parking_charges":
+            try:
+                old_num = float(old_value) if old_value is not None else None
+                new_num = float(new_value) if new_value is not None else None
+                if old_num != new_num:
+                    return True
+            except (TypeError, ValueError):
+                if old_value != new_value:
+                    return True
             continue
         if old_value != new_value:
             return True

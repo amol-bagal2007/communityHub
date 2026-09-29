@@ -19,7 +19,11 @@ from lib.pwa import inject_pwa_meta
 from lib.supabase_client import get_client
 from views.admin import render_admin_dashboard
 from views.auth import render_auth
-from views.user import render_user_dashboard
+from views.user import render_profile_page, render_user_dashboard
+
+NAV_KEY = "app_nav_page"
+NAV_DASHBOARD = "dashboard"
+NAV_PROFILE = "profile"
 
 
 def main() -> None:
@@ -27,7 +31,7 @@ def main() -> None:
         page_title="CommunityHub",
         page_icon="🏘️",
         layout="wide",
-        initial_sidebar_state="collapsed",
+        initial_sidebar_state="expanded",
     )
     inject_pwa_meta()
     inject_recovery_url_handler()
@@ -44,6 +48,7 @@ def main() -> None:
         return
 
     if not is_logged_in():
+        st.session_state.pop(NAV_KEY, None)
         st.title("🏘️ CommunityHub")
         st.markdown("Your society community portal — events, vendors, and more.")
         render_auth(client)
@@ -75,6 +80,12 @@ def main() -> None:
             st.rerun()
         return
 
+    page = st.session_state.get(NAV_KEY, NAV_DASHBOARD)
+    if page == NAV_PROFILE:
+        st.title("🏘️ CommunityHub")
+        render_profile_page(client, profile)
+        return
+
     if is_admin():
         render_admin_dashboard(client)
     elif is_approved_user():
@@ -90,7 +101,29 @@ def _render_sidebar(client) -> None:
             profile = get_profile()
             if profile:
                 st.write(format_name(profile))
-                st.caption(f"{profile.get('role', '').title()} · {profile.get('status', '')}")
+                st.caption(
+                    f"{profile.get('role', '').title()} · {profile.get('status', '')}"
+                )
+                if profile.get("status") == "approved":
+                    st.divider()
+                    current = st.session_state.get(NAV_KEY, NAV_DASHBOARD)
+                    if st.button(
+                        "Dashboard",
+                        use_container_width=True,
+                        type="primary" if current == NAV_DASHBOARD else "secondary",
+                        key="nav_dashboard",
+                    ):
+                        st.session_state[NAV_KEY] = NAV_DASHBOARD
+                        st.rerun()
+                    if st.button(
+                        "Profile",
+                        use_container_width=True,
+                        type="primary" if current == NAV_PROFILE else "secondary",
+                        key="nav_profile",
+                    ):
+                        st.session_state[NAV_KEY] = NAV_PROFILE
+                        st.rerun()
+                    st.divider()
             if st.button("Logout", use_container_width=True):
                 try:
                     client.auth.sign_out()
@@ -98,6 +131,7 @@ def _render_sidebar(client) -> None:
                     pass
                 clear_session()
                 st.session_state.pop(RECOVERY_FLAG, None)
+                st.session_state.pop(NAV_KEY, None)
                 st.rerun()
 
 

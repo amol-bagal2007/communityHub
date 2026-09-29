@@ -31,6 +31,7 @@ from lib.password_reset_requests import (
     load_pending_password_reset_requests,
     whatsapp_chat_url,
 )
+from lib.profile_extended_fields import render_extended_profile_fields
 from lib.profile_update import collect_profile_update_errors
 from lib.profile_utils import format_name, render_recommended_by_field
 from lib.roles import ROLE_TENANT, SIGNUP_ROLES, is_owner, role_label
@@ -43,6 +44,17 @@ from lib.vendor_categories import (
     category_display_name,
     load_vendor_categories,
     render_category_select,
+)
+from lib.vendor_ratings import (
+    ensure_vendor_recommendation,
+    feedback_caption,
+    find_my_rating,
+    load_vendor_ratings,
+    load_vendor_recommendations,
+    render_rating_form,
+    render_vendor_reviews,
+    summarize_vendor_feedback,
+    user_has_recommended,
 )
 
 
@@ -300,6 +312,7 @@ def _render_users_crud(client: SchemaClient) -> None:
         group_key="admin_add_user_member_group",
         sub_group_key="admin_add_user_member_sub_group",
     )
+    add_extended_fields = render_extended_profile_fields(key_prefix="admin_add_user")
 
     with st.form("admin_add_user"):
         title = st.selectbox(
@@ -341,6 +354,7 @@ def _render_users_crud(client: SchemaClient) -> None:
             society_id=society_id,
             tower_id=tower_id,
             email=email,
+            extended_fields=add_extended_fields,
         )
         pwd_error = validate_password(temp_password)
         if pwd_error:
@@ -369,6 +383,17 @@ def _render_users_crud(client: SchemaClient) -> None:
                         "society_id": society_id,
                         "tower_id": tower_id,
                         "flat_number": flat_number.strip(),
+                        **{
+                            key: (
+                                str(value)
+                                if key
+                                in ("parking_availability_value", "parking_charges")
+                                and value is not None
+                                else value
+                            )
+                            for key, value in add_extended_fields.items()
+                            if value is not None
+                        },
                     }
                     if member_group_id:
                         user_metadata["member_group_id"] = member_group_id
@@ -391,6 +416,7 @@ def _render_users_crud(client: SchemaClient) -> None:
                         "flat_number": flat_number.strip(),
                         "tenant_expiry_date": None,
                         "staying_within_society": False,
+                        **add_extended_fields,
                     }
                     if add_role == ROLE_TENANT and add_tenant_expiry:
                         expiry = add_tenant_expiry.isoformat()
@@ -425,18 +451,23 @@ def _render_users_crud(client: SchemaClient) -> None:
 
     st.divider()
 
+    admin_profile = get_profile() or {}
+    admin_id = admin_profile.get("id")
+
     users = (
         client.table("profiles")
         .select("*, societies(name), towers(name), member_groups(name), member_sub_groups(name)")
-        # Admins should be able to manage/edit any existing user (including admins)
+        # Admins should be able to manage/edit any existing user (including other admins)
         .order("first_name")
         .execute()
         .data
         or []
     )
+    # Do not allow editing your own account here — use sidebar Profile instead.
+    users = [u for u in users if u.get("id") != admin_id]
 
     if not users:
-        st.info("No users yet.")
+        st.info("No other users to edit.")
         return
 
     edit_id = st.selectbox(
@@ -513,6 +544,10 @@ def _render_users_crud(client: SchemaClient) -> None:
             current_group_id=user.get("member_group_id"),
             current_sub_group_id=user.get("member_sub_group_id"),
         )
+        edit_extended_fields = render_extended_profile_fields(
+            key_prefix=f"edit_user_{edit_id}",
+            current=user,
+        )
 
         with st.form("edit_user"):
             title = st.selectbox("Title *", TITLE_OPTIONS, index=title_index)
@@ -566,6 +601,7 @@ def _render_users_crud(client: SchemaClient) -> None:
                 society_id=selected_society_id,
                 tower_id=tower_map.get(tower_name) if tower_name else None,
                 email=email,
+                extended_fields=edit_extended_fields,
             )
             if errors:
                 for err in errors:
@@ -594,6 +630,7 @@ def _render_users_crud(client: SchemaClient) -> None:
                     "staying_within_society": (
                         edit_staying_within_society if is_owner(edit_role) else False
                     ),
+                    **edit_extended_fields,
                 }
                 client.table("profiles").update(update_data).eq("id", edit_id).execute()
                 st.success("User updated and approved.")
@@ -846,19 +883,31 @@ def _render_vendors_crud(client: SchemaClient) -> None:
             elif not category_id:
                 st.error("Select a category.")
             elif society_name in soc_map:
-                client.table("vendors").insert(
-                    {
-                        "first_name": first_name.strip(),
-                        "last_name": last_name.strip(),
-                        "recommended_by": recommended_by.strip() or None,
-                        "category_id": category_id,
-                        "contact_phone": contact_phone.strip() or None,
-                        "contact_email": contact_email.strip() or None,
-                        "description": description.strip() or None,
-                        "society_id": soc_map[society_name],
-                        "added_by": profile["id"],
-                    }
-                ).execute()
+                inserted = (
+                    client.table("vendors")
+                    .insert(
+                        {
+                            "first_name": first_name.strip(),
+                            "last_name": last_name.strip(),
+                            "recommended_by": recommended_by.strip() or None,
+                            "category_id": category_id,
+                            "contact_phone": contact_phone.strip() or None,
+                            "contact_email": contact_email.strip() or None,
+                            "description": description.strip() or None,
+                            "society_id": soc_map[society_name],
+                            "added_by": profile["id"],
+                        }
+                    )
+                    .execute()
+                    .data
+                    or []
+                )
+                if inserted:
+                    ensure_vendor_recommendation(
+                        client,
+                        vendor_id=inserted[0]["id"],
+                        user_id=profile["id"],
+                    )
                 st.success("Vendor added.")
                 st.rerun()
 
@@ -871,15 +920,33 @@ def _render_vendors_crud(client: SchemaClient) -> None:
         or []
     )
 
+    vendor_ids = [v["id"] for v in vendors]
+    try:
+        ratings = load_vendor_ratings(client, vendor_ids)
+        recommendations = load_vendor_recommendations(client, vendor_ids)
+        feedback = summarize_vendor_feedback(ratings, recommendations)
+    except Exception as exc:
+        st.warning(
+            f"Vendor ratings/recommendations unavailable (run migration 022): {exc}"
+        )
+        ratings = []
+        feedback = {}
+
+    ratings_by_vendor: dict[str, list] = {}
+    for row in ratings:
+        ratings_by_vendor.setdefault(row["vendor_id"], []).append(row)
+
     for vendor in vendors:
         added_by = format_name(vendor.get("profiles"), "Unknown")
         society = (vendor.get("societies") or {}).get("name", "—")
         vendor_label = format_name(vendor, "Vendor")
         open_key = f"admin_vendor_open_{vendor['id']}"
+        summary_data = feedback.get(vendor["id"])
 
         with st.container(border=True):
             summary, action = st.columns([5, 1])
             summary.markdown(f"**{vendor_label}** — {category_display_name(vendor)}")
+            summary.caption(feedback_caption(summary_data))
             if action.button(
                 "Hide" if st.session_state.get(open_key) else "View",
                 key=f"admin_vendor_view_{vendor['id']}",
@@ -892,13 +959,43 @@ def _render_vendors_crud(client: SchemaClient) -> None:
                 continue
 
             st.write(f"Society: {society} | Added by: {added_by}")
-            st.write(f"Recommended by: {vendor.get('recommended_by') or '—'}")
+            st.write(f"Originally recommended by: {vendor.get('recommended_by') or '—'}")
+            st.write(feedback_caption(summary_data))
             st.write(
                 f"Phone: {vendor.get('contact_phone') or '—'} | "
                 f"Email: {vendor.get('contact_email') or '—'}"
             )
             if vendor.get("description"):
                 st.write(vendor["description"])
+
+            if not user_has_recommended(summary_data, profile["id"]):
+                if st.button(
+                    "Recommend this Vendor",
+                    key=f"admin_recommend_vendor_{vendor['id']}",
+                ):
+                    err = ensure_vendor_recommendation(
+                        client,
+                        vendor_id=vendor["id"],
+                        user_id=profile["id"],
+                    )
+                    if err:
+                        st.error(err)
+                    else:
+                        st.success("Recommendation saved.")
+                        st.rerun()
+            else:
+                st.caption("You have recommended this vendor.")
+
+            vendor_ratings = ratings_by_vendor.get(vendor["id"], [])
+            render_vendor_reviews(vendor_ratings)
+            my_rating = find_my_rating(vendor_ratings, profile["id"])
+            render_rating_form(
+                client,
+                vendor_id=vendor["id"],
+                user_id=profile["id"],
+                existing=my_rating,
+                key_prefix=f"admin_vendor_{vendor['id']}",
+            )
 
             with st.form(f"edit_vendor_{vendor['id']}"):
                 c1, c2 = st.columns(2)

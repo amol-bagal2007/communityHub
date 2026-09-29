@@ -6,9 +6,14 @@ import streamlit as st
 from lib.supabase_client import SchemaClient
 
 from lib.auth import clear_session, set_session
+from lib.disclaimer import DISCLAIMER_VERSION, render_signup_disclaimer
 from lib.member_groups import load_member_groups
 from lib.member_sub_groups import render_group_sub_group_fields
 from lib.password_recovery import render_forgot_password
+from lib.profile_extended_fields import (
+    render_extended_profile_fields,
+    validate_extended_profile_fields,
+)
 from lib.profile_repair import registration_error_message, try_repair_orphan_profile
 from lib.roles import ROLE_OWNER, ROLE_TENANT, SIGNUP_ROLES, is_owner, role_label
 from lib.titles import TITLE_OPTIONS, is_valid_title
@@ -146,6 +151,8 @@ def _render_signup(client: SchemaClient) -> None:
         group_key="signup_member_group",
         sub_group_key="signup_member_sub_group",
     )
+    extended_fields = render_extended_profile_fields(key_prefix="signup")
+    disclaimer_accepted = render_signup_disclaimer(key="signup_disclaimer_accepted")
 
     with st.form("signup_form"):
         title = st.selectbox(
@@ -172,10 +179,22 @@ def _render_signup(client: SchemaClient) -> None:
         confirm = st.text_input("Confirm Password *", type="password")
         flat_number = st.text_input("Flat / Unit Number *")
 
-        submitted = st.form_submit_button("Register", type="primary", use_container_width=True)
+        submitted = st.form_submit_button(
+            "Register",
+            type="primary",
+            use_container_width=True,
+            disabled=not disclaimer_accepted,
+        )
+
+    if not disclaimer_accepted:
+        st.info("Please accept the User Acknowledgement & Disclaimer above to enable Register.")
 
     if submitted:
         errors = []
+        if not disclaimer_accepted:
+            errors.append(
+                "You must accept the User Acknowledgement & Disclaimer to register."
+            )
         if not is_valid_title(title):
             errors.append("Please select a title.")
         if not first_name.strip():
@@ -202,6 +221,7 @@ def _render_signup(client: SchemaClient) -> None:
             errors.append(
                 "Owners must confirm that they are staying within the society."
             )
+        errors.extend(validate_extended_profile_fields(extended_fields))
 
         if errors:
             for err in errors:
@@ -219,6 +239,17 @@ def _render_signup(client: SchemaClient) -> None:
             "society_id": society_id,
             "tower_id": tower_options[tower_name],
             "flat_number": flat_number.strip(),
+            "disclaimer_accepted": True,
+            "disclaimer_version": DISCLAIMER_VERSION,
+            **{
+                key: (
+                    str(value)
+                    if key in ("parking_availability_value", "parking_charges") and value is not None
+                    else value
+                )
+                for key, value in extended_fields.items()
+                if value is not None
+            },
         }
         if member_group_id:
             metadata["member_group_id"] = member_group_id
