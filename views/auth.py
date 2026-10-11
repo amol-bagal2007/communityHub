@@ -5,6 +5,7 @@ from datetime import date
 import streamlit as st
 from lib.supabase_client import SchemaClient
 
+from lib.admin_contacts import render_admin_contacts
 from lib.auth import clear_session, set_session
 from lib.disclaimer import (
     DISCLAIMER_VERSION,
@@ -29,7 +30,7 @@ from lib.visibility import load_societies, load_towers
 
 def render_auth(client: SchemaClient) -> None:
     if is_disclaimer_view():
-        render_disclaimer_screen()
+        render_disclaimer_screen(client)
         return
 
     if st.session_state.get("auth_prefer_signup"):
@@ -40,13 +41,16 @@ def render_auth(client: SchemaClient) -> None:
         _render_signup(client)
         return
 
-    tab_login, tab_signup = st.tabs(["Login", "Sign Up"])
+    tab_login, tab_signup, tab_contact = st.tabs(["Login", "Sign Up", "Contact"])
 
     with tab_login:
         _render_login(client)
 
     with tab_signup:
         _render_signup(client)
+
+    with tab_contact:
+        render_admin_contacts(client)
 
 
 def _render_login(client: SchemaClient) -> None:

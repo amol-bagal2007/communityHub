@@ -53,8 +53,11 @@ def main() -> None:
         st.session_state.pop(NAV_KEY, None)
         st.title("🏘️ CommunityHub")
         st.markdown(
-            "Joyville society community portal — events, vendors, and more. "
-            "Restricted to Joyville society members only."
+            """
+**Welcome to Joyville Community Hub: Powered by Residents**
+
+Your exclusive neighborhood portal built to make society living effortless. Recommend trusted vendors, support resident-run businesses, and join active community groups—all in one secure platform. Designed to help everyone, including tenants,residents and NRI home owners, seamlessly discover and connect with our trusted local ecosystem.
+            """.strip()
         )
         render_auth(client)
         return

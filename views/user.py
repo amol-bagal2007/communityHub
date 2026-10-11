@@ -53,6 +53,7 @@ from lib.vendor_ratings import (
     summarize_vendor_feedback,
     user_has_recommended,
 )
+from lib.admin_contacts import render_admin_contacts
 from lib.local_businesses import render_local_businesses
 from lib.visibility import (
     FLAG_EVENTS_TAB,
@@ -83,6 +84,7 @@ def render_user_dashboard(client: SchemaClient) -> None:
     if show_local_business:
         tab_defs.append(("Local Business", "local_business"))
     tab_defs.append(("My Society", "society"))
+    tab_defs.append(("Contact", "contact"))
 
     tabs = st.tabs([label for label, _ in tab_defs])
     for tab, (_, kind) in zip(tabs, tab_defs):
@@ -93,6 +95,8 @@ def render_user_dashboard(client: SchemaClient) -> None:
                 _render_vendors(client, profile)
             elif kind == "local_business":
                 render_local_businesses(client, profile, admin=False)
+            elif kind == "contact":
+                render_admin_contacts(client)
             else:
                 _render_society_info(client, profile)
 
