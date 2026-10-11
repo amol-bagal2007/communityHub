@@ -4,6 +4,13 @@ from typing import Any
 
 import streamlit as st
 
+from lib.interest_groups import (
+    decode_group_interest_ids,
+    encode_group_interest_ids,
+    load_interest_groups,
+)
+from lib.supabase_client import SchemaClient
+
 TEXT_LIMIT = 5000
 
 PARKING_SHARE_NOT_AVAILABLE = "not_available"
@@ -42,14 +49,24 @@ def clip_text(value: str | None, limit: int = TEXT_LIMIT) -> str | None:
     return text[:limit]
 
 
-def validate_extended_profile_fields(data: dict[str, Any]) -> list[str]:
+def validate_extended_profile_fields(
+    data: dict[str, Any],
+    *,
+    valid_interest_ids: set[str] | None = None,
+) -> list[str]:
     errors: list[str] = []
     bio = data.get("bio") or ""
     interests = data.get("group_interests") or ""
     if len(bio) > TEXT_LIMIT:
         errors.append(f"Bio must be at most {TEXT_LIMIT} characters.")
     if len(interests) > TEXT_LIMIT:
-        errors.append(f"Interested in groups must be at most {TEXT_LIMIT} characters.")
+        errors.append(f"Interested in groups selection is too large.")
+
+    selected_ids = decode_group_interest_ids(interests)
+    if valid_interest_ids is not None:
+        invalid = [i for i in selected_ids if i not in valid_interest_ids]
+        if invalid:
+            errors.append("One or more selected interest groups are no longer available.")
 
     share = data.get("parking_share_mode")
     if share and share not in PARKING_SHARE_OPTIONS:
@@ -103,6 +120,12 @@ def normalize_extended_profile_fields(data: dict[str, Any]) -> dict[str, Any]:
             unit = None
             charges_val = None
 
+    interest_ids = data.get("group_interest_ids")
+    if interest_ids is None:
+        group_interests = clip_text(data.get("group_interests"))
+    else:
+        group_interests = encode_group_interest_ids(list(interest_ids or []))
+
     return {
         "parking_number": (data.get("parking_number") or "").strip() or None,
         "parking_floor": (data.get("parking_floor") or "").strip() or None,
@@ -111,11 +134,12 @@ def normalize_extended_profile_fields(data: dict[str, Any]) -> dict[str, Any]:
         "parking_availability_unit": unit,
         "parking_charges": charges_val,
         "bio": clip_text(data.get("bio")),
-        "group_interests": clip_text(data.get("group_interests")),
+        "group_interests": group_interests,
     }
 
 
 def render_extended_profile_fields(
+    client: SchemaClient,
     *,
     key_prefix: str,
     current: dict | None = None,
@@ -193,17 +217,27 @@ def render_extended_profile_fields(
         help=f"Free text up to {TEXT_LIMIT} characters.",
         key=f"{key_prefix}_bio",
     )
-    group_interests = st.text_area(
-        "Interested in groups",
-        value=current.get("group_interests") or "",
-        max_chars=TEXT_LIMIT,
-        height=120,
-        help=(
-            f"Mention interest in joining any group within the society "
-            f"(up to {TEXT_LIMIT} characters)."
-        ),
-        key=f"{key_prefix}_group_interests",
-    )
+
+    st.markdown("**Interested in groups**")
+    interest_groups = load_interest_groups(client)
+    selected_ids = decode_group_interest_ids(current.get("group_interests"))
+    chosen: list[str] = []
+    if not interest_groups:
+        st.caption(
+            "No group interest options yet. An admin can add them under Users."
+        )
+    else:
+        st.caption("Select one or more groups you are interested in.")
+        cols = st.columns(2)
+        for index, group in enumerate(interest_groups):
+            col = cols[index % 2]
+            checked = col.checkbox(
+                group["name"],
+                value=group["id"] in selected_ids,
+                key=f"{key_prefix}_interest_group_{group['id']}",
+            )
+            if checked:
+                chosen.append(group["id"])
 
     return normalize_extended_profile_fields(
         {
@@ -214,6 +248,6 @@ def render_extended_profile_fields(
             "parking_availability_unit": parking_availability_unit,
             "parking_charges": parking_charges,
             "bio": bio,
-            "group_interests": group_interests,
+            "group_interest_ids": chosen,
         }
     )

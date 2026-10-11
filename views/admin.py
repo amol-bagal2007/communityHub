@@ -31,6 +31,7 @@ from lib.password_reset_requests import (
     load_pending_password_reset_requests,
     whatsapp_chat_url,
 )
+from lib.interest_groups import render_interest_groups_crud
 from lib.profile_extended_fields import render_extended_profile_fields
 from lib.profile_update import collect_profile_update_errors
 from lib.profile_utils import format_name, render_recommended_by_field
@@ -57,8 +58,10 @@ from lib.vendor_ratings import (
     summarize_vendor_feedback,
     user_has_recommended,
 )
+from lib.local_businesses import render_local_businesses
 from lib.visibility import (
     FLAG_EVENTS_TAB,
+    FLAG_LOCAL_BUSINESS_TAB,
     FLAG_VENDORS_TAB,
     load_societies,
     render_feature_toggle,
@@ -72,8 +75,22 @@ def render_admin_dashboard(client: SchemaClient) -> None:
     st.title("Admin Dashboard")
     st.caption(f"Signed in as {format_name(profile, 'Admin')}")
 
-    tab_approvals, tab_users, tab_societies, tab_vendors, tab_events = st.tabs(
-        ["Pending Approvals", "Users", "Societies & Towers", "Vendors", "Events"]
+    (
+        tab_approvals,
+        tab_users,
+        tab_societies,
+        tab_vendors,
+        tab_local_business,
+        tab_events,
+    ) = st.tabs(
+        [
+            "Pending Approvals",
+            "Users",
+            "Societies & Towers",
+            "Vendors",
+            "Local Business",
+            "Events",
+        ]
     )
 
     with tab_approvals:
@@ -87,6 +104,9 @@ def render_admin_dashboard(client: SchemaClient) -> None:
 
     with tab_vendors:
         _render_vendors_crud(client)
+
+    with tab_local_business:
+        _render_local_business_crud(client)
 
     with tab_events:
         _render_events_crud(client)
@@ -249,6 +269,9 @@ def _render_users_crud(client: SchemaClient) -> None:
         _render_member_sub_groups_crud(client)
         st.divider()
 
+    render_interest_groups_crud(client)
+    st.divider()
+
     groups = load_member_groups(client) if SHOW_MEMBER_GROUP_FIELDS else []
 
     st.markdown("**Add New User (auto-approved)**")
@@ -321,7 +344,9 @@ def _render_users_crud(client: SchemaClient) -> None:
         group_key="admin_add_user_member_group",
         sub_group_key="admin_add_user_member_sub_group",
     )
-    add_extended_fields = render_extended_profile_fields(key_prefix="admin_add_user")
+    add_extended_fields = render_extended_profile_fields(
+        client, key_prefix="admin_add_user"
+    )
 
     with st.form("admin_add_user"):
         title = st.selectbox(
@@ -554,6 +579,7 @@ def _render_users_crud(client: SchemaClient) -> None:
             current_sub_group_id=user.get("member_sub_group_id"),
         )
         edit_extended_fields = render_extended_profile_fields(
+            client,
             key_prefix=f"edit_user_{edit_id}",
             current=user,
         )
@@ -901,6 +927,20 @@ def _render_societies_crud(client: SchemaClient) -> None:
                     if c2.form_submit_button("Delete"):
                         client.table("societies").delete().eq("id", soc["id"]).execute()
                         st.rerun()
+
+
+def _render_local_business_crud(client: SchemaClient) -> None:
+    render_feature_toggle(
+        client,
+        key=FLAG_LOCAL_BUSINESS_TAB,
+        label="Enable Local Business tab for members",
+        help_text="When checked, approved members see the Local Business tab.",
+        widget_key="admin_enable_local_business_tab",
+    )
+    st.divider()
+    profile = get_profile()
+    societies = load_societies(client, enabled_only=False)
+    render_local_businesses(client, profile, admin=True, societies=societies)
 
 
 def _render_vendors_crud(client: SchemaClient) -> None:

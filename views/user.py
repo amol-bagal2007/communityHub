@@ -53,8 +53,10 @@ from lib.vendor_ratings import (
     summarize_vendor_feedback,
     user_has_recommended,
 )
+from lib.local_businesses import render_local_businesses
 from lib.visibility import (
     FLAG_EVENTS_TAB,
+    FLAG_LOCAL_BUSINESS_TAB,
     FLAG_VENDORS_TAB,
     is_feature_enabled,
     load_societies,
@@ -69,12 +71,17 @@ def render_user_dashboard(client: SchemaClient) -> None:
 
     show_events = is_feature_enabled(client, FLAG_EVENTS_TAB, default=False)
     show_vendors = is_feature_enabled(client, FLAG_VENDORS_TAB, default=False)
+    show_local_business = is_feature_enabled(
+        client, FLAG_LOCAL_BUSINESS_TAB, default=False
+    )
 
     tab_defs: list[tuple[str, str]] = []
     if show_events:
         tab_defs.append(("Events", "events"))
     if show_vendors:
         tab_defs.append(("Vendors", "vendors"))
+    if show_local_business:
+        tab_defs.append(("Local Business", "local_business"))
     tab_defs.append(("My Society", "society"))
 
     tabs = st.tabs([label for label, _ in tab_defs])
@@ -84,6 +91,8 @@ def render_user_dashboard(client: SchemaClient) -> None:
                 _render_events(client, profile)
             elif kind == "vendors":
                 _render_vendors(client, profile)
+            elif kind == "local_business":
+                render_local_businesses(client, profile, admin=False)
             else:
                 _render_society_info(client, profile)
 
@@ -566,6 +575,7 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
         current_sub_group_id=profile.get("member_sub_group_id"),
     )
     extended_fields = render_extended_profile_fields(
+        client,
         key_prefix="profile",
         current=profile,
     )

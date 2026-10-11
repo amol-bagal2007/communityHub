@@ -165,7 +165,7 @@ def _render_signup(client: SchemaClient) -> None:
         group_key="signup_member_group",
         sub_group_key="signup_member_sub_group",
     )
-    extended_fields = render_extended_profile_fields(key_prefix="signup")
+    extended_fields = render_extended_profile_fields(client, key_prefix="signup")
     disclaimer_accepted = render_signup_disclaimer(key="signup_disclaimer_accepted")
 
     title = st.selectbox(
