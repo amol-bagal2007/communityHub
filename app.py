@@ -8,6 +8,7 @@ from lib.auth import (
     is_logged_in,
     restore_session,
 )
+from lib.mobile_ui import inject_mobile_styles, render_mobile_top_nav
 from lib.password_recovery import (
     RECOVERY_FLAG,
     inject_recovery_url_handler,
@@ -30,10 +31,11 @@ def main() -> None:
     st.set_page_config(
         page_title="CommunityHub",
         page_icon="🏘️",
-        layout="wide",
-        initial_sidebar_state="expanded",
+        layout="centered",
+        initial_sidebar_state="collapsed",
     )
     inject_pwa_meta()
+    inject_mobile_styles()
     inject_recovery_url_handler()
 
     client = get_client()
@@ -50,7 +52,10 @@ def main() -> None:
     if not is_logged_in():
         st.session_state.pop(NAV_KEY, None)
         st.title("🏘️ CommunityHub")
-        st.markdown("Joyville society community portal — events, vendors, and more. Restricted to Joyville society members only.")
+        st.markdown(
+            "Joyville society community portal — events, vendors, and more. "
+            "Restricted to Joyville society members only."
+        )
         render_auth(client)
         return
 
@@ -66,7 +71,7 @@ def main() -> None:
             "Your registration is pending admin approval. "
             "You will get full access once approved."
         )
-        if st.button("Logout"):
+        if st.button("Logout", use_container_width=True):
             client.auth.sign_out()
             clear_session()
             st.rerun()
@@ -74,13 +79,19 @@ def main() -> None:
 
     if profile.get("status") == "rejected":
         st.error("Your registration was rejected. Contact your society admin.")
-        if st.button("Logout"):
+        if st.button("Logout", use_container_width=True):
             client.auth.sign_out()
             clear_session()
             st.rerun()
         return
 
     page = st.session_state.get(NAV_KEY, NAV_DASHBOARD)
+    if profile.get("status") == "approved":
+        requested = render_mobile_top_nav(current=page, show_nav=True)
+        if requested and requested != page:
+            st.session_state[NAV_KEY] = requested
+            st.rerun()
+
     if page == NAV_PROFILE:
         st.title("🏘️ CommunityHub")
         render_profile_page(client, profile)
@@ -97,6 +108,7 @@ def main() -> None:
 def _render_sidebar(client) -> None:
     with st.sidebar:
         st.markdown("### 🏘️ CommunityHub")
+        st.caption("Menu · works on phone and desktop")
         if is_logged_in():
             profile = get_profile()
             if profile:

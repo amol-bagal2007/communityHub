@@ -1,12 +1,13 @@
 {
   "name": "CommunityHub",
   "short_name": "CommunityHub",
-  "description": "Society community portal — events, vendors, and resident management",
+  "description": "Joyville society community portal for mobile — events, vendors, local business, and residents",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#1a5276",
   "orientation": "portrait-primary",
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "icon-192.png",
