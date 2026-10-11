@@ -6,7 +6,12 @@ import streamlit as st
 from lib.supabase_client import SchemaClient
 
 from lib.auth import clear_session, set_session
-from lib.disclaimer import DISCLAIMER_VERSION, render_signup_disclaimer
+from lib.disclaimer import (
+    DISCLAIMER_VERSION,
+    is_disclaimer_view,
+    render_disclaimer_screen,
+    render_signup_disclaimer,
+)
 from lib.member_groups import load_member_groups
 from lib.member_sub_groups import render_group_sub_group_fields
 from lib.password_recovery import render_forgot_password
@@ -19,9 +24,22 @@ from lib.roles import ROLE_OWNER, ROLE_TENANT, SIGNUP_ROLES, is_owner, role_labe
 from lib.titles import TITLE_OPTIONS, is_valid_title
 from lib.user_demographics import MAX_AGE, MIN_AGE, SEX_OPTIONS, sex_age_validation_errors
 from lib.validation import validate_password
+from lib.visibility import load_societies, load_towers
 
 
 def render_auth(client: SchemaClient) -> None:
+    if is_disclaimer_view():
+        render_disclaimer_screen()
+        return
+
+    if st.session_state.get("auth_prefer_signup"):
+        if st.button("← Back to Login"):
+            st.session_state.auth_prefer_signup = False
+            st.rerun()
+        st.subheader("Sign Up")
+        _render_signup(client)
+        return
+
     tab_login, tab_signup = st.tabs(["Login", "Sign Up"])
 
     with tab_login:
@@ -83,12 +101,13 @@ def _on_signup_society_change() -> None:
 
 def _render_signup(client: SchemaClient) -> None:
     groups = load_member_groups(client)
-    societies = client.table("societies").select("id, name").order("name").execute().data or []
+    societies = load_societies(client, enabled_only=True)
     society_options = {s["name"]: s["id"] for s in societies}
 
     if not society_options:
         st.warning(
-            "No societies registered yet. Ask your admin to add society details first."
+            "No societies are enabled for registration yet. "
+            "Ask your admin to add and enable society details first."
         )
 
     society_name = st.selectbox(
@@ -102,19 +121,14 @@ def _render_signup(client: SchemaClient) -> None:
 
     tower_options: dict[str, str] = {}
     if society_id:
-        towers = (
-            client.table("towers")
-            .select("id, name")
-            .eq("society_id", society_id)
-            .order("name")
-            .execute()
-            .data
-            or []
-        )
+        towers = load_towers(client, society_id, enabled_only=True)
         tower_options = {t["name"]: t["id"] for t in towers}
 
     if society_id and not tower_options:
-        st.info("No towers found for this society. Ask your admin to add towers first.")
+        st.info(
+            "No towers are enabled for this society yet. "
+            "Ask your admin to add and enable towers first."
+        )
 
     tower_name = st.selectbox(
         "Tower *",
@@ -154,40 +168,50 @@ def _render_signup(client: SchemaClient) -> None:
     extended_fields = render_extended_profile_fields(key_prefix="signup")
     disclaimer_accepted = render_signup_disclaimer(key="signup_disclaimer_accepted")
 
-    with st.form("signup_form"):
-        title = st.selectbox(
-            "Title *",
-            options=[""] + TITLE_OPTIONS,
-            format_func=lambda value: "Select title..." if value == "" else value,
-        )
-        col1, col2 = st.columns(2)
-        first_name = col1.text_input("First Name *")
-        last_name = col2.text_input("Last Name *")
-        col3, col4 = st.columns(2)
-        sex = col3.selectbox(
-            "Sex *",
-            options=[""] + SEX_OPTIONS,
-            format_func=lambda value: "Select sex..." if value == "" else value,
-        )
-        age = col4.number_input("Age *", min_value=MIN_AGE, max_value=MAX_AGE, step=1)
-        phone = st.text_input("Phone")
-        password = st.text_input(
-            "Password *",
-            type="password",
-            help="At least 7 characters with at least one letter and one number.",
-        )
-        confirm = st.text_input("Confirm Password *", type="password")
-        flat_number = st.text_input("Flat / Unit Number *")
+    title = st.selectbox(
+        "Title *",
+        options=[""] + TITLE_OPTIONS,
+        format_func=lambda value: "Select title..." if value == "" else value,
+        key="signup_title",
+    )
+    col1, col2 = st.columns(2)
+    first_name = col1.text_input("First Name *", key="signup_first_name")
+    last_name = col2.text_input("Last Name *", key="signup_last_name")
+    col3, col4 = st.columns(2)
+    sex = col3.selectbox(
+        "Sex *",
+        options=[""] + SEX_OPTIONS,
+        format_func=lambda value: "Select sex..." if value == "" else value,
+        key="signup_sex",
+    )
+    age = col4.number_input(
+        "Age *",
+        min_value=MIN_AGE,
+        max_value=MAX_AGE,
+        step=1,
+        key="signup_age",
+    )
+    phone = st.text_input("Phone", key="signup_phone")
+    password = st.text_input(
+        "Password *",
+        type="password",
+        help="At least 7 characters with at least one letter and one number.",
+        key="signup_password",
+    )
+    confirm = st.text_input(
+        "Confirm Password *",
+        type="password",
+        key="signup_confirm_password",
+    )
+    flat_number = st.text_input("Flat / Unit Number *", key="signup_flat_number")
 
-        submitted = st.form_submit_button(
-            "Register",
-            type="primary",
-            use_container_width=True,
-            disabled=not disclaimer_accepted,
-        )
-
-    if not disclaimer_accepted:
-        st.info("Please accept the User Acknowledgement & Disclaimer above to enable Register.")
+    submitted = st.button(
+        "Register",
+        type="primary",
+        use_container_width=True,
+        disabled=not disclaimer_accepted,
+        key="signup_register",
+    )
 
     if submitted:
         errors = []

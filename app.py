@@ -50,7 +50,7 @@ def main() -> None:
     if not is_logged_in():
         st.session_state.pop(NAV_KEY, None)
         st.title("🏘️ CommunityHub")
-        st.markdown("Your society community portal — events, vendors, and more.")
+        st.markdown("Joyville society community portal — events, vendors, and more. Restricted to Joyville society members only.")
         render_auth(client)
         return
 

@@ -40,6 +40,7 @@ from lib.vendor_categories import (
     category_display_name,
     load_vendor_categories,
     render_category_select,
+    render_vendor_filter_and_page,
 )
 from lib.vendor_ratings import (
     ensure_vendor_recommendation,
@@ -52,6 +53,13 @@ from lib.vendor_ratings import (
     summarize_vendor_feedback,
     user_has_recommended,
 )
+from lib.visibility import (
+    FLAG_EVENTS_TAB,
+    FLAG_VENDORS_TAB,
+    is_feature_enabled,
+    load_societies,
+    load_towers,
+)
 
 
 def render_user_dashboard(client: SchemaClient) -> None:
@@ -59,18 +67,25 @@ def render_user_dashboard(client: SchemaClient) -> None:
     st.title("CommunityHub")
     st.caption(f"Welcome, {format_name(profile, 'Resident')}")
 
-    tab_events, tab_vendors, tab_society = st.tabs(
-        ["Events", "Vendors", "My Society"]
-    )
+    show_events = is_feature_enabled(client, FLAG_EVENTS_TAB, default=False)
+    show_vendors = is_feature_enabled(client, FLAG_VENDORS_TAB, default=False)
 
-    with tab_events:
-        _render_events(client, profile)
+    tab_defs: list[tuple[str, str]] = []
+    if show_events:
+        tab_defs.append(("Events", "events"))
+    if show_vendors:
+        tab_defs.append(("Vendors", "vendors"))
+    tab_defs.append(("My Society", "society"))
 
-    with tab_vendors:
-        _render_vendors(client, profile)
-
-    with tab_society:
-        _render_society_info(client, profile)
+    tabs = st.tabs([label for label, _ in tab_defs])
+    for tab, (_, kind) in zip(tabs, tab_defs):
+        with tab:
+            if kind == "events":
+                _render_events(client, profile)
+            elif kind == "vendors":
+                _render_vendors(client, profile)
+            else:
+                _render_society_info(client, profile)
 
 
 def render_profile_page(client: SchemaClient, profile: dict) -> None:
@@ -263,16 +278,21 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
         .select("*, profiles(first_name, last_name), vendor_categories(name)")
         .eq("society_id", society_id)
         .order("first_name")
+        .order("last_name")
         .execute()
         .data
         or []
     )
 
-    if not vendors:
-        st.info("No vendors listed yet.")
+    page_vendors = render_vendor_filter_and_page(
+        categories,
+        vendors,
+        key_prefix="user_vendors",
+    )
+    if not page_vendors:
         return
 
-    vendor_ids = [v["id"] for v in vendors]
+    vendor_ids = [v["id"] for v in page_vendors]
     try:
         ratings = load_vendor_ratings(client, vendor_ids)
         recommendations = load_vendor_recommendations(client, vendor_ids)
@@ -288,7 +308,7 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
     for row in ratings:
         ratings_by_vendor.setdefault(row["vendor_id"], []).append(row)
 
-    for vendor in vendors:
+    for vendor in page_vendors:
         added_by = format_name(vendor.get("profiles"), "Community")
         can_edit = vendor.get("added_by") == profile["id"]
         vendor_label = format_name(vendor, "Vendor")
@@ -451,7 +471,11 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
     )
 
     groups = load_member_groups(client)
-    societies = client.table("societies").select("id, name").order("name").execute().data or []
+    societies = load_societies(
+        client,
+        enabled_only=True,
+        include_id=profile.get("society_id"),
+    )
     society_map = {s["name"]: s["id"] for s in societies}
     society_id_to_name = {s["id"]: s["name"] for s in societies}
     current_society_name = society_id_to_name.get(profile.get("society_id"), "")
@@ -472,14 +496,11 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
 
     tower_map: dict[str, str] = {}
     if selected_society_id:
-        towers = (
-            client.table("towers")
-            .select("id, name")
-            .eq("society_id", selected_society_id)
-            .order("name")
-            .execute()
-            .data
-            or []
+        towers = load_towers(
+            client,
+            selected_society_id,
+            enabled_only=True,
+            include_id=profile.get("tower_id"),
         )
         tower_map = {t["name"]: t["id"] for t in towers}
 

@@ -44,6 +44,7 @@ from lib.vendor_categories import (
     category_display_name,
     load_vendor_categories,
     render_category_select,
+    render_vendor_filter_and_page,
 )
 from lib.vendor_ratings import (
     ensure_vendor_recommendation,
@@ -55,6 +56,14 @@ from lib.vendor_ratings import (
     render_vendor_reviews,
     summarize_vendor_feedback,
     user_has_recommended,
+)
+from lib.visibility import (
+    FLAG_EVENTS_TAB,
+    FLAG_VENDORS_TAB,
+    load_societies,
+    render_feature_toggle,
+    set_society_enabled,
+    set_tower_enabled,
 )
 
 
@@ -769,6 +778,9 @@ def _render_member_sub_groups_crud(client: SchemaClient) -> None:
 
 def _render_societies_crud(client: SchemaClient) -> None:
     st.subheader("Societies & Towers")
+    st.caption(
+        "Enable a society or tower for members before it appears on Sign Up / Profile."
+    )
 
     col_add, col_list = st.columns([1, 2])
 
@@ -779,6 +791,11 @@ def _render_societies_crud(client: SchemaClient) -> None:
             area = st.text_input("Area")
             road = st.text_input("Road")
             pin_code = st.text_input("Pin Code")
+            enable_society = st.checkbox(
+                "Enable for members",
+                value=False,
+                help="Only enabled societies appear for other users.",
+            )
             if st.form_submit_button("Add Society", type="primary"):
                 if name.strip():
                     client.table("societies").insert(
@@ -787,6 +804,7 @@ def _render_societies_crud(client: SchemaClient) -> None:
                             "area": area.strip(),
                             "road": road.strip(),
                             "pin_code": pin_code.strip(),
+                            "is_enabled": enable_society,
                         }
                     ).execute()
                     st.success("Society added.")
@@ -795,15 +813,24 @@ def _render_societies_crud(client: SchemaClient) -> None:
                     st.error("Society name is required.")
 
         st.markdown("**Add Tower**")
-        societies = client.table("societies").select("id, name").order("name").execute().data or []
+        societies = load_societies(client, enabled_only=False)
         soc_map = {s["name"]: s["id"] for s in societies}
         with st.form("add_tower"):
             soc_name = st.selectbox("Society", list(soc_map.keys()) if soc_map else [""])
             tower_name = st.text_input("Tower Name")
+            enable_tower = st.checkbox(
+                "Enable for members",
+                value=False,
+                help="Only enabled towers appear for other users.",
+            )
             if st.form_submit_button("Add Tower", type="primary"):
                 if tower_name.strip() and soc_name in soc_map:
                     client.table("towers").insert(
-                        {"society_id": soc_map[soc_name], "name": tower_name.strip()}
+                        {
+                            "society_id": soc_map[soc_name],
+                            "name": tower_name.strip(),
+                            "is_enabled": enable_tower,
+                        }
                     ).execute()
                     st.success("Tower added.")
                     st.rerun()
@@ -812,19 +839,46 @@ def _render_societies_crud(client: SchemaClient) -> None:
         st.markdown("**Existing Societies**")
         all_societies = (
             client.table("societies")
-            .select("*, towers(id, name)")
+            .select("*, towers(id, name, is_enabled)")
             .order("name")
             .execute()
             .data
             or []
         )
         for soc in all_societies:
-            with st.expander(f"{soc['name']} — {soc.get('area') or ''}"):
+            status = "Enabled" if soc.get("is_enabled") else "Disabled"
+            with st.expander(f"{soc['name']} — {soc.get('area') or ''} ({status})"):
                 st.write(f"Road: {soc.get('road') or '—'} | Pin: {soc.get('pin_code') or '—'}")
-                towers = soc.get("towers") or []
-                st.write(
-                    "Towers: " + ", ".join(t["name"] for t in towers) if towers else "No towers yet."
+
+                soc_enabled = st.checkbox(
+                    "Enable society for members",
+                    value=bool(soc.get("is_enabled")),
+                    key=f"soc_enabled_{soc['id']}",
                 )
+                if soc_enabled != bool(soc.get("is_enabled")):
+                    err = set_society_enabled(client, soc["id"], soc_enabled)
+                    if err:
+                        st.error(f"Could not update society visibility: {err}")
+                    else:
+                        st.rerun()
+
+                towers = soc.get("towers") or []
+                if not towers:
+                    st.write("No towers yet.")
+                else:
+                    st.markdown("**Towers**")
+                    for tower in sorted(towers, key=lambda t: (t.get("name") or "").lower()):
+                        tower_enabled = st.checkbox(
+                            f"Enable tower: {tower['name']}",
+                            value=bool(tower.get("is_enabled")),
+                            key=f"tower_enabled_{tower['id']}",
+                        )
+                        if tower_enabled != bool(tower.get("is_enabled")):
+                            err = set_tower_enabled(client, tower["id"], tower_enabled)
+                            if err:
+                                st.error(f"Could not update tower visibility: {err}")
+                            else:
+                                st.rerun()
 
                 with st.form(f"edit_society_{soc['id']}"):
                     new_name = st.text_input("Name", value=soc["name"], key=f"sn_{soc['id']}")
@@ -851,6 +905,14 @@ def _render_societies_crud(client: SchemaClient) -> None:
 
 def _render_vendors_crud(client: SchemaClient) -> None:
     st.subheader("Vendors")
+    render_feature_toggle(
+        client,
+        key=FLAG_VENDORS_TAB,
+        label="Enable Vendors tab for members",
+        help_text="When checked, approved members see the Vendors tab on their dashboard.",
+        widget_key="admin_enable_vendors_tab",
+    )
+    st.divider()
     _render_vendor_categories_crud(client)
     st.divider()
 
@@ -915,12 +977,21 @@ def _render_vendors_crud(client: SchemaClient) -> None:
         client.table("vendors")
         .select("*, societies(name), profiles(first_name, last_name), vendor_categories(name)")
         .order("first_name")
+        .order("last_name")
         .execute()
         .data
         or []
     )
 
-    vendor_ids = [v["id"] for v in vendors]
+    page_vendors = render_vendor_filter_and_page(
+        categories,
+        vendors,
+        key_prefix="admin_vendors",
+    )
+    if not page_vendors:
+        return
+
+    vendor_ids = [v["id"] for v in page_vendors]
     try:
         ratings = load_vendor_ratings(client, vendor_ids)
         recommendations = load_vendor_recommendations(client, vendor_ids)
@@ -936,7 +1007,7 @@ def _render_vendors_crud(client: SchemaClient) -> None:
     for row in ratings:
         ratings_by_vendor.setdefault(row["vendor_id"], []).append(row)
 
-    for vendor in vendors:
+    for vendor in page_vendors:
         added_by = format_name(vendor.get("profiles"), "Unknown")
         society = (vendor.get("societies") or {}).get("name", "—")
         vendor_label = format_name(vendor, "Vendor")
@@ -1074,8 +1145,16 @@ def _render_vendor_categories_crud(client: SchemaClient) -> None:
 
 def _render_events_crud(client: SchemaClient) -> None:
     st.subheader("Society Events")
+    render_feature_toggle(
+        client,
+        key=FLAG_EVENTS_TAB,
+        label="Enable Events tab for members",
+        help_text="When checked, approved members see the Events tab on their dashboard.",
+        widget_key="admin_enable_events_tab",
+    )
+    st.divider()
     profile = get_profile()
-    societies = client.table("societies").select("id, name").order("name").execute().data or []
+    societies = load_societies(client, enabled_only=False)
     soc_map = {s["name"]: s["id"] for s in societies}
 
     st.markdown("**Create Event**")
