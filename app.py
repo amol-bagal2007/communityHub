@@ -54,9 +54,9 @@ def main() -> None:
         st.title("🏘️ CommunityHub")
         st.markdown(
             """
-**Welcome to Joyville Community Hub: Powered by Residents**
+**Welcome to Community Hub: Powered by Residents**
 
-Your exclusive neighborhood portal built to make society living effortless. Recommend trusted vendors, support resident-run businesses, and join active community groups—all in one secure platform. Designed to help everyone, including tenants,residents and NRI home owners, seamlessly discover and connect with our trusted local ecosystem.
+Your exclusive neighborhood portal built to make society living effortless. Recommend trusted vendors, support resident-run businesses, and join active community groups—all in one secure platform. Designed to help everyone, including tenants and residents, seamlessly discover and connect with our trusted local ecosystem.
             """.strip()
         )
         render_auth(client)

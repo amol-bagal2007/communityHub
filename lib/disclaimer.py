@@ -16,11 +16,11 @@ SHOW_DISCLAIMER_KEY = "show_disclaimer_screen"
 _DISCLAIMER_INTRO = """
 By creating an account on CommunityHub, you acknowledge and agree to the following:
 
-1. **This platform is restricted to Joyville society members only. If you are not a Joyville society member 
+1. **This platform is restricted to society members only. If you are not a society residential 
 (Owner & Tenant), then please do not create an account.
 
-2. **It is a platform for society members to discover, add/update information about the genuine vendors, freelancers,   
-and share any internal activities/events. Note : It is not a platform for social media posts or comments.
+2. **It is a platform for society members to discover, add/update information about the genuine vendors, freelancers,  local-businesses, 
+local-services, etc. Note : It is not a platform for social media posts or comments.
 
 3. **No warranty / platform risk.** CommunityHub and its owner(s), administrators, and affiliates provide this platform on an “as is” and “as available” basis. Reasonable technical and administrative measures have been considered to reduce the likelihood of data loss, unauthorized access, or compromise of personal information; however, **no absolute guarantee can be given**, and residual risk remains. Users should remain mindful of this when sharing information online. To the fullest extent permitted by law, the owner(s), administrators, and affiliates shall not be liable for any data loss, service interruption, unauthorized access, disclosure, alteration, or compromise of personal or other information, including any transmission to or exposure involving third parties.
 
