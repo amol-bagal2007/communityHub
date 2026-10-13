@@ -40,6 +40,10 @@ _DISCLAIMER_OUTRO = """
 
 11. **Further action.** Where misconduct is established or reasonably suspected, the application owner/administrator reserves the right to take all lawful actions available, which may include internal disciplinary measures and, where appropriate, civil and/or criminal legal proceedings.
 
+12. **This application is an independently developed platform** created solely for the convenience of resident members. It is not owned, operated, endorsed, sponsored, or maintained by Housing Society or its Managing Committee.
+
+13. **The Society bears no legal responsibility or liability** for the operation, content, security, or availability of this platform.
+
 If you do not agree to these terms, do not register or use CommunityHub.
 """.strip()
 
