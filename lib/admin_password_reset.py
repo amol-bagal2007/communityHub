@@ -17,6 +17,14 @@ def admin_reset_user_password(user_id: str, new_password: str) -> str | None:
 
     try:
         svc = get_service_client()
+    except Exception as exc:
+        return (
+            "Password reset needs SUPABASE_SERVICE_ROLE_KEY "
+            "(Supabase → Project Settings → API Keys → Secret / service_role). "
+            f"Add it to local `.env` or Streamlit Secrets. Details: {exc}"
+        )
+
+    try:
         svc.raw.auth.admin.update_user_by_id(
             user_id,
             {"password": new_password},

@@ -55,7 +55,9 @@ from lib.vendor_ratings import (
 )
 from lib.admin_contacts import render_admin_contacts
 from lib.local_businesses import render_local_businesses
+from lib.parking_share import render_available_parking
 from lib.visibility import (
+    FLAG_AVAILABLE_PARKING_TAB,
     FLAG_EVENTS_TAB,
     FLAG_LOCAL_BUSINESS_TAB,
     FLAG_VENDORS_TAB,
@@ -75,6 +77,9 @@ def render_user_dashboard(client: SchemaClient) -> None:
     show_local_business = is_feature_enabled(
         client, FLAG_LOCAL_BUSINESS_TAB, default=False
     )
+    show_available_parking = is_feature_enabled(
+        client, FLAG_AVAILABLE_PARKING_TAB, default=False
+    )
 
     tab_defs: list[tuple[str, str]] = []
     if show_events:
@@ -83,6 +88,8 @@ def render_user_dashboard(client: SchemaClient) -> None:
         tab_defs.append(("Vendors", "vendors"))
     if show_local_business:
         tab_defs.append(("Local Business", "local_business"))
+    if show_available_parking:
+        tab_defs.append(("Available Parking", "available_parking"))
     tab_defs.append(("My Society", "society"))
     tab_defs.append(("Contact", "contact"))
 
@@ -95,6 +102,8 @@ def render_user_dashboard(client: SchemaClient) -> None:
                 _render_vendors(client, profile)
             elif kind == "local_business":
                 render_local_businesses(client, profile, admin=False)
+            elif kind == "available_parking":
+                render_available_parking(client, profile)
             elif kind == "contact":
                 render_admin_contacts(client)
             else:
@@ -471,7 +480,7 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
         + (
             "Update your details below and save."
             if is_admin_user
-            else "Saving changes (except password) sends your profile to the admin for approval."
+            else "Update your details below and save. Password changes are separate and apply immediately to your login."
         )
     )
 
@@ -607,7 +616,7 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
         )
         st.text_input("Status", value=(profile.get("status") or "").title(), disabled=True)
 
-        save_label = "Save Profile" if is_admin_user else "Save & Submit for Approval"
+        save_label = "Save Profile" if is_admin_user else "Save and Submit"
         submitted = st.form_submit_button(save_label, type="primary")
 
     st.markdown("**Change Password**")
@@ -716,8 +725,6 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
                 st.info("No changes to save.")
                 return
 
-            payload["status"] = "pending"
-
         try:
             if email.strip().lower() != (profile.get("email") or "").lower():
                 client.auth.update_user({"email": email.strip()})
@@ -734,8 +741,5 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
         refreshed = fetch_profile(client)
         if refreshed:
             st.session_state[PROFILE_KEY] = refreshed
-        if is_admin_user:
-            st.success("Profile updated.")
-        else:
-            st.success("Profile updated and sent to admin for approval.")
+        st.success("Profile saved successfully.")
         st.rerun()

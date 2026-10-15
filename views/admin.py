@@ -60,6 +60,7 @@ from lib.vendor_ratings import (
 )
 from lib.local_businesses import render_local_businesses
 from lib.visibility import (
+    FLAG_AVAILABLE_PARKING_TAB,
     FLAG_EVENTS_TAB,
     FLAG_LOCAL_BUSINESS_TAB,
     FLAG_VENDORS_TAB,
@@ -81,6 +82,7 @@ def render_admin_dashboard(client: SchemaClient) -> None:
         tab_societies,
         tab_vendors,
         tab_local_business,
+        tab_parking,
         tab_events,
     ) = st.tabs(
         [
@@ -89,6 +91,7 @@ def render_admin_dashboard(client: SchemaClient) -> None:
             "Societies & Towers",
             "Vendors",
             "Local Business",
+            "Available Parking",
             "Events",
         ]
     )
@@ -107,6 +110,9 @@ def render_admin_dashboard(client: SchemaClient) -> None:
 
     with tab_local_business:
         _render_local_business_crud(client)
+
+    with tab_parking:
+        _render_available_parking_admin(client)
 
     with tab_events:
         _render_events_crud(client)
@@ -941,6 +947,24 @@ def _render_local_business_crud(client: SchemaClient) -> None:
     profile = get_profile()
     societies = load_societies(client, enabled_only=False)
     render_local_businesses(client, profile, admin=True, societies=societies)
+
+
+def _render_available_parking_admin(client: SchemaClient) -> None:
+    st.subheader("Available Parking")
+    render_feature_toggle(
+        client,
+        key=FLAG_AVAILABLE_PARKING_TAB,
+        label="Enable Available Parking tab for members",
+        help_text=(
+            "When checked, members can browse shareable parkings from Profiles "
+            "and request allocation from the owner."
+        ),
+        widget_key="admin_enable_available_parking_tab",
+    )
+    st.caption(
+        "Members mark parking as Free/Paid under Profile → Parking. "
+        "Allocated parkings stay hidden until the owner or allottee cancels."
+    )
 
 
 def _render_vendors_crud(client: SchemaClient) -> None:
