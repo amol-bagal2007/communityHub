@@ -3,8 +3,9 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
-from lib.supabase_client import SchemaClient
 from lib.admin_password_reset import admin_reset_user_password
+from lib.email_lookup import EMAIL_NOT_REGISTERED_MSG, email_exists
+from lib.supabase_client import SchemaClient
 
 
 STATUS_PENDING = "pending"
@@ -44,6 +45,10 @@ def submit_password_reset_request(
         return wa_error
     wa_clean = normalize_whatsapp_number(whatsapp_number)
 
+    exists = email_exists(client, email_clean)
+    if exists is False:
+        return EMAIL_NOT_REGISTERED_MSG
+
     try:
         # SECURITY DEFINER RPC avoids anon RLS blocks on direct table insert.
         client.raw.rpc(
@@ -54,6 +59,9 @@ def submit_password_reset_request(
             },
         ).execute()
     except Exception as exc:
+        msg = str(exc)
+        if "EMAIL_NOT_REGISTERED" in msg:
+            return EMAIL_NOT_REGISTERED_MSG
         return f"Could not submit request: {exc}"
     return None
 

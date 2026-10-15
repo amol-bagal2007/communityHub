@@ -13,6 +13,7 @@ from lib.disclaimer import (
     render_disclaimer_screen,
     render_signup_disclaimer,
 )
+from lib.email_lookup import EMAIL_NOT_REGISTERED_MSG, email_exists
 from lib.member_groups import load_member_groups
 from lib.member_sub_groups import render_group_sub_group_fields
 from lib.password_recovery import render_forgot_password
@@ -74,9 +75,14 @@ def _render_login(client: SchemaClient) -> None:
         if not email or not password:
             st.error("Email and password are required.")
             return
+        email_clean = email.strip().lower()
+        exists = email_exists(client, email_clean)
+        if exists is False:
+            st.error(EMAIL_NOT_REGISTERED_MSG)
+            return
         try:
             response = client.auth.sign_in_with_password(
-                {"email": email.strip(), "password": password}
+                {"email": email_clean, "password": password}
             )
             if response.session:
                 profile = set_session(client, response.session)
@@ -87,7 +93,9 @@ def _render_login(client: SchemaClient) -> None:
                 st.success("Logged in successfully!")
                 st.rerun()
             else:
-                st.error("Login failed. Check your credentials.")
+                st.error(
+                    "Login failed. Check your password, or use Forgot Password / Contact Admin."
+                )
         except Exception as exc:
             msg = str(exc)
             if "Email not confirmed" in msg:
@@ -95,6 +103,15 @@ def _render_login(client: SchemaClient) -> None:
                     "Your email is not confirmed yet. Check your inbox for the confirmation "
                     "link, or use Forgot Password to reset your account."
                 )
+            elif exists is False or "Invalid login credentials" in msg:
+                # Re-check in case Auth user was removed but we couldn't verify earlier.
+                if email_exists(client, email_clean) is False:
+                    st.error(EMAIL_NOT_REGISTERED_MSG)
+                else:
+                    st.error(
+                        "Incorrect email or password. If this email is registered, "
+                        "use Forgot Password or contact the Admin (Contact tab)."
+                    )
             else:
                 st.error(f"Login failed: {exc}")
 
