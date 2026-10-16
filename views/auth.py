@@ -178,17 +178,6 @@ def _render_signup(client: SchemaClient) -> None:
             min_value=date.today(),
             key="signup_tenant_expiry",
         )
-
-    email = st.text_input("Email *", placeholder="you@example.com", key="signup_email")
-    member_group_id, member_sub_group_id = render_group_sub_group_fields(
-        client,
-        groups,
-        group_key="signup_member_group",
-        sub_group_key="signup_member_sub_group",
-    )
-    extended_fields = render_extended_profile_fields(client, key_prefix="signup")
-    disclaimer_accepted = render_signup_disclaimer(key="signup_disclaimer_accepted")
-
     title = st.selectbox(
         "Title *",
         options=[""] + TITLE_OPTIONS,
@@ -212,7 +201,15 @@ def _render_signup(client: SchemaClient) -> None:
         step=1,
         key="signup_age",
     )
+    flat_number = st.text_input("Flat / Unit Number *", key="signup_flat_number")
+    extended_fields = render_extended_profile_fields(client, key_prefix="signup")
     phone = st.text_input("Phone", key="signup_phone")
+    personal_whatsapp = st.text_input(
+        "Personal WhatsApp Number",
+        key="signup_personal_whatsapp",
+        help="Used so members and admin can reach you on WhatsApp.",
+    )
+    email = st.text_input("Email *", placeholder="you@example.com", key="signup_email")
     password = st.text_input(
         "Password *",
         type="password",
@@ -224,7 +221,15 @@ def _render_signup(client: SchemaClient) -> None:
         type="password",
         key="signup_confirm_password",
     )
-    flat_number = st.text_input("Flat / Unit Number *", key="signup_flat_number")
+    
+    member_group_id, member_sub_group_id = render_group_sub_group_fields(
+        client,
+        groups,
+        group_key="signup_member_group",
+        sub_group_key="signup_member_sub_group",
+    )
+    
+    disclaimer_accepted = render_signup_disclaimer(key="signup_disclaimer_accepted")
 
     submitted = st.button(
         "Register",
@@ -280,6 +285,7 @@ def _render_signup(client: SchemaClient) -> None:
             "sex": sex,
             "age": int(age),
             "phone": phone.strip() or None,
+            "personal_whatsapp": personal_whatsapp.strip() or None,
             "role": role,
             "society_id": society_id,
             "tower_id": tower_options[tower_name],

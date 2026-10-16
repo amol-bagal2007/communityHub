@@ -58,7 +58,7 @@ from lib.vendor_ratings import (
     summarize_vendor_feedback,
     user_has_recommended,
 )
-from lib.local_businesses import render_local_businesses
+from lib.local_businesses import INFO_NOTE, render_local_businesses
 from lib.visibility import (
     FLAG_AVAILABLE_PARKING_TAB,
     FLAG_EVENTS_TAB,
@@ -969,6 +969,7 @@ def _render_available_parking_admin(client: SchemaClient) -> None:
 
 def _render_vendors_crud(client: SchemaClient) -> None:
     st.subheader("Vendors")
+    st.info(INFO_NOTE)
     render_feature_toggle(
         client,
         key=FLAG_VENDORS_TAB,
@@ -998,6 +999,7 @@ def _render_vendors_crud(client: SchemaClient) -> None:
         c3, c4 = st.columns(2)
         category_id = render_category_select(categories, key="admin_add_vendor_category")
         contact_phone = c4.text_input("Phone")
+        personal_whatsapp = st.text_input("Personal WhatsApp Number")
         contact_email = st.text_input("Email")
         description = st.text_area("Description")
         society_name = st.selectbox("Society", list(soc_map.keys()) if soc_map else [""])
@@ -1018,6 +1020,7 @@ def _render_vendors_crud(client: SchemaClient) -> None:
                             "recommended_by": recommended_by.strip() or None,
                             "category_id": category_id,
                             "contact_phone": contact_phone.strip() or None,
+                            "personal_whatsapp": personal_whatsapp.strip() or None,
                             "contact_email": contact_email.strip() or None,
                             "description": description.strip() or None,
                             "society_id": soc_map[society_name],
@@ -1098,6 +1101,7 @@ def _render_vendors_crud(client: SchemaClient) -> None:
             st.write(feedback_caption(summary_data))
             st.write(
                 f"Phone: {vendor.get('contact_phone') or '—'} | "
+                f"WhatsApp: {vendor.get('personal_whatsapp') or '—'} | "
                 f"Email: {vendor.get('contact_email') or '—'}"
             )
             if vendor.get("description"):
@@ -1147,6 +1151,10 @@ def _render_vendors_crud(client: SchemaClient) -> None:
                     current_category_id=vendor.get("category_id"),
                 )
                 ep = st.text_input("Phone", value=vendor.get("contact_phone") or "")
+                ewa = st.text_input(
+                    "Personal WhatsApp Number",
+                    value=vendor.get("personal_whatsapp") or "",
+                )
                 ee = st.text_input("Email", value=vendor.get("contact_email") or "")
                 ed = st.text_area("Description", value=vendor.get("description") or "")
                 c1, c2 = st.columns(2)
@@ -1158,6 +1166,7 @@ def _render_vendors_crud(client: SchemaClient) -> None:
                             "recommended_by": rb.strip() or None,
                             "category_id": category_id,
                             "contact_phone": ep,
+                            "personal_whatsapp": ewa.strip() or None,
                             "contact_email": ee,
                             "description": ed,
                         }

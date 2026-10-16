@@ -54,7 +54,7 @@ from lib.vendor_ratings import (
     user_has_recommended,
 )
 from lib.admin_contacts import render_admin_contacts
-from lib.local_businesses import render_local_businesses
+from lib.local_businesses import INFO_NOTE, render_local_businesses
 from lib.parking_share import render_available_parking
 from lib.visibility import (
     FLAG_AVAILABLE_PARKING_TAB,
@@ -242,6 +242,7 @@ def _render_events(client: SchemaClient, profile: dict) -> None:
 
 def _render_vendors(client: SchemaClient, profile: dict) -> None:
     st.subheader("Community Vendors")
+    st.info(INFO_NOTE)
     society_id = profile.get("society_id")
     recommender_name = format_name(profile)
     categories = load_vendor_categories(client)
@@ -257,6 +258,7 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
             render_recommended_by_readonly(recommender_name)
             category_id = render_category_select(categories, key="user_add_vendor_category")
             phone = st.text_input("Phone")
+            personal_whatsapp = st.text_input("Personal WhatsApp Number")
             email = st.text_input("Email")
             description = st.text_area("Description")
             if st.form_submit_button("Submit Vendor", type="primary"):
@@ -276,6 +278,7 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
                                 "recommended_by": recommender_name,
                                 "category_id": category_id,
                                 "contact_phone": phone.strip() or None,
+                                "personal_whatsapp": personal_whatsapp.strip() or None,
                                 "contact_email": email.strip() or None,
                                 "description": description.strip() or None,
                                 "society_id": society_id,
@@ -356,9 +359,10 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
             if vendor.get("recommended_by"):
                 st.caption(f"Originally recommended by {vendor['recommended_by']}")
             st.write(feedback_caption(summary_data))
-            if vendor.get("contact_phone") or vendor.get("contact_email"):
+            if vendor.get("contact_phone") or vendor.get("personal_whatsapp") or vendor.get("contact_email"):
                 st.write(
                     f"📞 {vendor.get('contact_phone') or '—'}  "
+                    f"| WhatsApp: {vendor.get('personal_whatsapp') or '—'}  "
                     f"| ✉️ {vendor.get('contact_email') or '—'}"
                 )
             if vendor.get("description"):
@@ -407,6 +411,10 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
                         current_category_id=vendor.get("category_id"),
                     )
                     ep = st.text_input("Phone", value=vendor.get("contact_phone") or "")
+                    ewa = st.text_input(
+                        "Personal WhatsApp Number",
+                        value=vendor.get("personal_whatsapp") or "",
+                    )
                     ee = st.text_input("Email", value=vendor.get("contact_email") or "")
                     ed = st.text_area("Description", value=vendor.get("description") or "")
                     c1, c2 = st.columns(2)
@@ -417,6 +425,7 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
                                 "last_name": ln.strip(),
                                 "category_id": category_id,
                                 "contact_phone": ep,
+                                "personal_whatsapp": ewa.strip() or None,
                                 "contact_email": ee,
                                 "description": ed,
                             }
@@ -610,6 +619,10 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
             step=1,
         )
         phone = st.text_input("Phone", value=profile.get("phone") or "")
+        personal_whatsapp = st.text_input(
+            "Personal WhatsApp Number",
+            value=profile.get("personal_whatsapp") or "",
+        )
         flat_number = st.text_input(
             "Flat / Unit Number *" if not is_admin_user else "Flat / Unit Number",
             value=profile.get("flat_number") or "",
@@ -672,6 +685,7 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
                 "sex": sex,
                 "age": normalize_age(age),
                 "phone": phone.strip() or None,
+                "personal_whatsapp": personal_whatsapp.strip() or None,
                 "email": email.strip(),
                 "member_group_id": member_group_id,
                 "member_sub_group_id": member_sub_group_id,
@@ -708,6 +722,7 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
                 sex=sex,
                 age=age,
                 phone=phone,
+                personal_whatsapp=personal_whatsapp,
                 email=email,
                 member_group_id=member_group_id,
                 member_sub_group_id=member_sub_group_id,

@@ -63,6 +63,7 @@ def try_repair_orphan_profile(
             "member_group_id": metadata.get("member_group_id"),
             "member_sub_group_id": metadata.get("member_sub_group_id"),
             "phone": metadata.get("phone"),
+            "personal_whatsapp": metadata.get("personal_whatsapp"),
             "role": role,
             "society_id": metadata.get("society_id"),
             "tower_id": metadata.get("tower_id"),

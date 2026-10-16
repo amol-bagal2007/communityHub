@@ -79,6 +79,7 @@ def build_profile_update_payload(
     staying_within_society: bool,
     tenant_expiry: date | None,
     for_reapproval: bool,
+    personal_whatsapp: str = "",
     extended_fields: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized_age = normalize_age(age)
@@ -89,6 +90,7 @@ def build_profile_update_payload(
         "sex": sex,
         "age": normalized_age,
         "phone": phone.strip() or None,
+        "personal_whatsapp": (personal_whatsapp or "").strip() or None,
         "email": email.strip(),
         "member_group_id": member_group_id,
         "member_sub_group_id": member_sub_group_id,
@@ -114,6 +116,7 @@ def profile_has_changes(profile: dict, payload: dict[str, Any]) -> bool:
         "sex": payload.get("sex"),
         "age": payload.get("age"),
         "phone": payload.get("phone"),
+        "personal_whatsapp": payload.get("personal_whatsapp"),
         "email": payload.get("email"),
         "member_group_id": payload.get("member_group_id"),
         "member_sub_group_id": payload.get("member_sub_group_id"),
