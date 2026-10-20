@@ -13,8 +13,10 @@ from lib.local_business_ratings import (
     render_business_reviews,
     summarize_business_ratings,
 )
+from lib.contact_numbers import duplicate_contact_message, message_if_duplicate_db_error
 from lib.profile_utils import format_name
 from lib.supabase_client import SchemaClient
+from lib.validation import EMAIL_PLACEHOLDER, MOBILE_HELP, MOBILE_PLACEHOLDER, contact_field_errors
 from lib.visibility import load_societies, load_towers
 
 INFO_NOTE = (
@@ -130,6 +132,8 @@ def _validate_business_payload(
     tower_id: str | None,
     flat_number: str,
     whatsapp_group_link: str,
+    phone: str = "",
+    whatsapp_number: str = "",
 ) -> list[str]:
     errors: list[str] = []
     if not business_name.strip():
@@ -147,6 +151,13 @@ def _validate_business_payload(
     link = (whatsapp_group_link or "").strip()
     if link and not (link.startswith("http://") or link.startswith("https://")):
         errors.append("WhatsApp group link should start with https://")
+    errors.extend(
+        contact_field_errors(
+            phone=phone,
+            whatsapp=whatsapp_number,
+            whatsapp_label="Personal WhatsApp Number",
+        )
+    )
     return errors
 
 
@@ -218,11 +229,17 @@ def render_local_businesses(
         last_name = c2.text_input("Last Name *", key=f"{key_prefix}_add_last")
         business_name = st.text_input("Business Name *", key=f"{key_prefix}_add_name")
         description = st.text_area("Business Description", key=f"{key_prefix}_add_desc")
-        phone = st.text_input("Phone", key=f"{key_prefix}_add_phone")
+        phone = st.text_input(
+            "Phone",
+            key=f"{key_prefix}_add_phone",
+            placeholder=MOBILE_PLACEHOLDER,
+            help=MOBILE_HELP,
+        )
         whatsapp_number = st.text_input(
             "Personal WhatsApp Number",
             key=f"{key_prefix}_add_wa",
-            help="Include country code if possible, e.g. 9198xxxxxxxx",
+            placeholder=MOBILE_PLACEHOLDER,
+            help=MOBILE_HELP,
         )
         add_society_id, add_tower_id = _render_society_tower(
             client,
@@ -252,39 +269,50 @@ def render_local_businesses(
                 tower_id=add_tower_id,
                 flat_number=flat_number,
                 whatsapp_group_link=whatsapp_group_link,
+                phone=phone,
+                whatsapp_number=whatsapp_number,
             )
             if errors:
                 for err in errors:
                     st.error(err)
             else:
-                try:
-                    client.table("local_businesses").insert(
-                        {
-                            "business_name": business_name.strip(),
-                            "first_name": first_name.strip(),
-                            "last_name": last_name.strip(),
-                            "description": description.strip() or None,
-                            "phone": phone.strip() or None,
-                            "whatsapp_number": whatsapp_number.strip() or None,
-                            "whatsapp_group_link": whatsapp_group_link.strip() or None,
-                            "timing": timing.strip() or None,
-                            "week_off": week_off,
-                            "society_id": add_society_id,
-                            "tower_id": add_tower_id,
-                            "flat_number": flat_number.strip(),
-                            "added_by": user_id,
-                            "status": STATUS_APPROVED if admin else STATUS_PENDING,
-                        }
-                    ).execute()
-                    if admin:
-                        st.success("Local business added.")
-                    else:
-                        st.success(
-                            "Business submitted. It will appear after admin approval."
+                duplicate = duplicate_contact_message(
+                    client, [phone, whatsapp_number]
+                )
+                if duplicate:
+                    st.error(duplicate)
+                else:
+                    try:
+                        client.table("local_businesses").insert(
+                            {
+                                "business_name": business_name.strip(),
+                                "first_name": first_name.strip(),
+                                "last_name": last_name.strip(),
+                                "description": description.strip() or None,
+                                "phone": phone.strip() or None,
+                                "whatsapp_number": whatsapp_number.strip() or None,
+                                "whatsapp_group_link": whatsapp_group_link.strip() or None,
+                                "timing": timing.strip() or None,
+                                "week_off": week_off,
+                                "society_id": add_society_id,
+                                "tower_id": add_tower_id,
+                                "flat_number": flat_number.strip(),
+                                "added_by": user_id,
+                                "status": STATUS_APPROVED if admin else STATUS_PENDING,
+                            }
+                        ).execute()
+                        if admin:
+                            st.success("Local business added.")
+                        else:
+                            st.success(
+                                "Business submitted. It will appear after admin approval."
+                            )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(
+                            message_if_duplicate_db_error(exc)
+                            or f"Could not add business (run migration 030): {exc}"
                         )
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Could not add business (run migration 030): {exc}")
 
     query = (
         client.table("local_businesses")
@@ -436,11 +464,15 @@ def render_local_businesses(
                 "Phone",
                 value=business.get("phone") or "",
                 key=f"{key_prefix}_edit_phone_{business['id']}",
+                placeholder=MOBILE_PLACEHOLDER,
+                help=MOBILE_HELP,
             )
             edit_wa = st.text_input(
                 "Personal WhatsApp Number",
                 value=business.get("whatsapp_number") or "",
                 key=f"{key_prefix}_edit_wa_{business['id']}",
+                placeholder=MOBILE_PLACEHOLDER,
+                help=MOBILE_HELP,
             )
             edit_society_id, edit_tower_id = _render_society_tower(
                 client,
@@ -482,41 +514,54 @@ def render_local_businesses(
                     tower_id=edit_tower_id,
                     flat_number=edit_flat,
                     whatsapp_group_link=edit_wa_group,
+                    phone=edit_phone,
+                    whatsapp_number=edit_wa,
                 )
                 if errors:
                     for err in errors:
                         st.error(err)
                 else:
-                    payload = {
-                        "business_name": edit_name.strip(),
-                        "first_name": edit_first.strip(),
-                        "last_name": edit_last.strip(),
-                        "description": edit_desc.strip() or None,
-                        "phone": edit_phone.strip() or None,
-                        "whatsapp_number": edit_wa.strip() or None,
-                        "whatsapp_group_link": edit_wa_group.strip() or None,
-                        "timing": edit_timing.strip() or None,
-                        "week_off": edit_week_off,
-                        "society_id": edit_society_id,
-                        "tower_id": edit_tower_id,
-                        "flat_number": edit_flat.strip(),
-                        "updated_at": _utc_now_iso(),
-                    }
-                    if not admin:
-                        payload["status"] = STATUS_PENDING
-                    try:
-                        client.table("local_businesses").update(payload).eq(
-                            "id", business["id"]
-                        ).execute()
-                        if admin:
-                            st.success("Business updated.")
-                        else:
-                            st.success(
-                                "Changes submitted for admin approval."
+                    duplicate = duplicate_contact_message(
+                        client,
+                        [edit_phone, edit_wa],
+                        exclude_business_id=business["id"],
+                    )
+                    if duplicate:
+                        st.error(duplicate)
+                    else:
+                        payload = {
+                            "business_name": edit_name.strip(),
+                            "first_name": edit_first.strip(),
+                            "last_name": edit_last.strip(),
+                            "description": edit_desc.strip() or None,
+                            "phone": edit_phone.strip() or None,
+                            "whatsapp_number": edit_wa.strip() or None,
+                            "whatsapp_group_link": edit_wa_group.strip() or None,
+                            "timing": edit_timing.strip() or None,
+                            "week_off": edit_week_off,
+                            "society_id": edit_society_id,
+                            "tower_id": edit_tower_id,
+                            "flat_number": edit_flat.strip(),
+                            "updated_at": _utc_now_iso(),
+                        }
+                        if not admin:
+                            payload["status"] = STATUS_PENDING
+                        try:
+                            client.table("local_businesses").update(payload).eq(
+                                "id", business["id"]
+                            ).execute()
+                            if admin:
+                                st.success("Business updated.")
+                            else:
+                                st.success(
+                                    "Changes submitted for admin approval."
+                                )
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(
+                                message_if_duplicate_db_error(exc)
+                                or f"Could not update: {exc}"
                             )
-                        st.rerun()
-                    except Exception as exc:
-                        st.error(f"Could not update: {exc}")
             if c2.button(
                 "Delete",
                 key=f"{key_prefix}_delete_{business['id']}",

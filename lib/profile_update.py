@@ -7,6 +7,7 @@ from lib.profile_extended_fields import validate_extended_profile_fields
 from lib.roles import ROLE_TENANT, is_owner
 from lib.titles import is_valid_title
 from lib.user_demographics import normalize_age, sex_age_validation_errors
+from lib.validation import contact_field_errors
 
 EXTENDED_KEYS = (
     "parking_number",
@@ -35,6 +36,8 @@ def collect_profile_update_errors(
     tower_id: str | None,
     email: str,
     extended_fields: dict[str, Any] | None = None,
+    phone: str = "",
+    personal_whatsapp: str = "",
 ) -> list[str]:
     errors: list[str] = []
     if not is_valid_title(title):
@@ -44,8 +47,15 @@ def collect_profile_update_errors(
     if not last_name.strip():
         errors.append("Last name is required.")
     errors.extend(sex_age_validation_errors(sex, age))
-    if not email.strip():
-        errors.append("Email is required.")
+    errors.extend(
+        contact_field_errors(
+            email=email,
+            email_required=True,
+            phone=phone,
+            whatsapp=personal_whatsapp,
+            whatsapp_label="Personal WhatsApp Number",
+        )
+    )
     if not flat_number.strip():
         errors.append("Flat / unit number is required.")
     if not society_id:

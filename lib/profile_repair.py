@@ -126,4 +126,8 @@ def registration_error_message(exc: Exception, *, repaired: bool = False) -> str
         return "Owners must confirm that they are staying within the society."
     if "tenant_expiry_date" in msg:
         return "Tenant expiry date is required for tenant registrations."
+    if "already exists" in msg.lower() and ("phone" in msg.lower() or "whatsapp" in msg.lower()):
+        return (
+            "This phone or WhatsApp number already exists. Please use a different number."
+        )
     return f"Registration failed: {exc}"

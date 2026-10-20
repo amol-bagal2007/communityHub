@@ -6,6 +6,7 @@ import streamlit as st
 from lib.supabase_client import SchemaClient
 
 from lib.admin_contacts import render_admin_contacts
+from lib.contact_numbers import duplicate_contact_message
 from lib.auth import clear_session, set_session
 from lib.disclaimer import (
     DISCLAIMER_VERSION,
@@ -25,7 +26,7 @@ from lib.profile_repair import registration_error_message, try_repair_orphan_pro
 from lib.roles import ROLE_OWNER, ROLE_TENANT, SIGNUP_ROLES, is_owner, role_label
 from lib.titles import TITLE_OPTIONS, is_valid_title
 from lib.user_demographics import MAX_AGE, MIN_AGE, SEX_OPTIONS, sex_age_validation_errors
-from lib.validation import validate_password
+from lib.validation import EMAIL_PLACEHOLDER, MOBILE_HELP, MOBILE_PLACEHOLDER, contact_field_errors, validate_email_address, validate_password
 from lib.visibility import load_societies, load_towers
 
 
@@ -63,7 +64,7 @@ def _render_login(client: SchemaClient) -> None:
         return
 
     with st.form("login_form"):
-        email = st.text_input("Email", placeholder="you@example.com")
+        email = st.text_input("Email", placeholder=EMAIL_PLACEHOLDER)
         password = st.text_input("Password", type="password")
         submitted = st.form_submit_button("Login", type="primary", use_container_width=True)
 
@@ -74,6 +75,10 @@ def _render_login(client: SchemaClient) -> None:
     if submitted:
         if not email or not password:
             st.error("Email and password are required.")
+            return
+        email_error = validate_email_address(email, required=True)
+        if email_error:
+            st.error(email_error)
             return
         email_clean = email.strip().lower()
         exists = email_exists(client, email_clean)
@@ -203,13 +208,19 @@ def _render_signup(client: SchemaClient) -> None:
     )
     flat_number = st.text_input("Flat / Unit Number *", key="signup_flat_number")
     extended_fields = render_extended_profile_fields(client, key_prefix="signup")
-    phone = st.text_input("Phone", key="signup_phone")
+    phone = st.text_input(
+        "Phone",
+        key="signup_phone",
+        placeholder=MOBILE_PLACEHOLDER,
+        help=MOBILE_HELP,
+    )
     personal_whatsapp = st.text_input(
         "Personal WhatsApp Number",
         key="signup_personal_whatsapp",
-        help="Used so members and admin can reach you on WhatsApp.",
+        placeholder=MOBILE_PLACEHOLDER,
+        help=MOBILE_HELP,
     )
-    email = st.text_input("Email *", placeholder="you@example.com", key="signup_email")
+    email = st.text_input("Email *", placeholder=EMAIL_PLACEHOLDER, key="signup_email")
     password = st.text_input(
         "Password *",
         type="password",
@@ -252,8 +263,15 @@ def _render_signup(client: SchemaClient) -> None:
         if not last_name.strip():
             errors.append("Last name is required.")
         errors.extend(sex_age_validation_errors(sex, age))
-        if not email.strip():
-            errors.append("Email is required.")
+        errors.extend(
+            contact_field_errors(
+                email=email,
+                email_required=True,
+                phone=phone,
+                whatsapp=personal_whatsapp,
+                whatsapp_label="Personal WhatsApp Number",
+            )
+        )
         pwd_error = validate_password(password)
         if pwd_error:
             errors.append(pwd_error)
@@ -272,6 +290,9 @@ def _render_signup(client: SchemaClient) -> None:
                 "Owners must confirm that they are staying within the society."
             )
         errors.extend(validate_extended_profile_fields(extended_fields))
+        duplicate = duplicate_contact_message(client, [phone, personal_whatsapp])
+        if duplicate:
+            errors.append(duplicate)
 
         if errors:
             for err in errors:

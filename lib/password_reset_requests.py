@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from lib.admin_password_reset import admin_reset_user_password
 from lib.email_lookup import EMAIL_NOT_REGISTERED_MSG, email_exists
 from lib.supabase_client import SchemaClient
+from lib.validation import validate_email_address, validate_mobile_number
 
 
 STATUS_PENDING = "pending"
@@ -21,13 +22,9 @@ def normalize_whatsapp_number(value: str) -> str:
 
 
 def validate_whatsapp_number(value: str) -> str | None:
-    cleaned = normalize_whatsapp_number(value)
-    digits = re.sub(r"\D", "", cleaned)
-    if len(digits) < 10:
-        return "Enter a valid WhatsApp mobile number (at least 10 digits)."
-    if len(digits) > 15:
-        return "WhatsApp number is too long."
-    return None
+    return validate_mobile_number(
+        value, required=True, label="WhatsApp mobile number"
+    )
 
 
 def submit_password_reset_request(
@@ -37,9 +34,10 @@ def submit_password_reset_request(
     whatsapp_number: str,
 ) -> str | None:
     """Create a pending admin password-reset request. Returns error or None."""
+    email_error = validate_email_address(email, required=True, label="Email")
+    if email_error:
+        return email_error
     email_clean = (email or "").strip().lower()
-    if not email_clean or "@" not in email_clean:
-        return "A valid email is required."
     wa_error = validate_whatsapp_number(whatsapp_number)
     if wa_error:
         return wa_error

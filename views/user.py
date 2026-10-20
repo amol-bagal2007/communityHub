@@ -35,7 +35,13 @@ from lib.roles import ROLE_TENANT, SIGNUP_ROLES, is_owner, role_label as member_
 from lib.tenant_utils import parse_profile_date
 from lib.titles import TITLE_OPTIONS, is_valid_title
 from lib.user_demographics import MAX_AGE, MIN_AGE, SEX_OPTIONS, normalize_age, sex_age_validation_errors
-from lib.validation import validate_password
+from lib.validation import (
+    EMAIL_PLACEHOLDER,
+    MOBILE_HELP,
+    MOBILE_PLACEHOLDER,
+    contact_field_errors,
+    validate_password,
+)
 from lib.vendor_categories import (
     category_display_name,
     load_vendor_categories,
@@ -54,6 +60,7 @@ from lib.vendor_ratings import (
     user_has_recommended,
 )
 from lib.admin_contacts import render_admin_contacts
+from lib.contact_numbers import duplicate_contact_message, message_if_duplicate_db_error
 from lib.local_businesses import INFO_NOTE, render_local_businesses
 from lib.parking_share import render_available_parking
 from lib.visibility import (
@@ -257,46 +264,72 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
             last_name = c2.text_input("Vendor Last Name *")
             render_recommended_by_readonly(recommender_name)
             category_id = render_category_select(categories, key="user_add_vendor_category")
-            phone = st.text_input("Phone")
-            personal_whatsapp = st.text_input("Personal WhatsApp Number")
-            email = st.text_input("Email")
+            phone = st.text_input("Phone", placeholder=MOBILE_PLACEHOLDER, help=MOBILE_HELP)
+            personal_whatsapp = st.text_input(
+                "Personal WhatsApp Number",
+                placeholder=MOBILE_PLACEHOLDER,
+                help=MOBILE_HELP,
+            )
+            email = st.text_input("Email", placeholder=EMAIL_PLACEHOLDER)
             description = st.text_area("Description")
             if st.form_submit_button("Submit Vendor", type="primary"):
+                format_errors = contact_field_errors(
+                    email=email,
+                    phone=phone,
+                    whatsapp=personal_whatsapp,
+                    whatsapp_label="Personal WhatsApp Number",
+                )
                 if not first_name.strip():
                     st.error("Vendor first name is required.")
                 elif not last_name.strip():
                     st.error("Vendor last name is required.")
                 elif not category_id:
                     st.error("Select a category.")
+                elif format_errors:
+                    for err in format_errors:
+                        st.error(err)
                 else:
-                    inserted = (
-                        client.table("vendors")
-                        .insert(
-                            {
-                                "first_name": first_name.strip(),
-                                "last_name": last_name.strip(),
-                                "recommended_by": recommender_name,
-                                "category_id": category_id,
-                                "contact_phone": phone.strip() or None,
-                                "personal_whatsapp": personal_whatsapp.strip() or None,
-                                "contact_email": email.strip() or None,
-                                "description": description.strip() or None,
-                                "society_id": society_id,
-                                "added_by": profile["id"],
-                            }
-                        )
-                        .execute()
-                        .data
-                        or []
+                    duplicate = duplicate_contact_message(
+                        client, [phone, personal_whatsapp]
                     )
-                    if inserted:
-                        ensure_vendor_recommendation(
-                            client,
-                            vendor_id=inserted[0]["id"],
-                            user_id=profile["id"],
-                        )
-                    st.success("Vendor added!")
-                    st.rerun()
+                    if duplicate:
+                        st.error(duplicate)
+                    else:
+                        try:
+                            inserted = (
+                                client.table("vendors")
+                                .insert(
+                                    {
+                                        "first_name": first_name.strip(),
+                                        "last_name": last_name.strip(),
+                                        "recommended_by": recommender_name,
+                                        "category_id": category_id,
+                                        "contact_phone": phone.strip() or None,
+                                        "personal_whatsapp": personal_whatsapp.strip() or None,
+                                        "contact_email": email.strip() or None,
+                                        "description": description.strip() or None,
+                                        "society_id": society_id,
+                                        "added_by": profile["id"],
+                                    }
+                                )
+                                .execute()
+                                .data
+                                or []
+                            )
+                        except Exception as exc:
+                            st.error(
+                                message_if_duplicate_db_error(exc)
+                                or f"Could not add vendor: {exc}"
+                            )
+                            inserted = []
+                        if inserted:
+                            ensure_vendor_recommendation(
+                                client,
+                                vendor_id=inserted[0]["id"],
+                                user_id=profile["id"],
+                            )
+                            st.success("Vendor added!")
+                            st.rerun()
 
     vendors = (
         client.table("vendors")
@@ -410,27 +443,62 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
                         key=f"user_edit_vendor_category_{vendor['id']}",
                         current_category_id=vendor.get("category_id"),
                     )
-                    ep = st.text_input("Phone", value=vendor.get("contact_phone") or "")
+                    ep = st.text_input(
+                        "Phone",
+                        value=vendor.get("contact_phone") or "",
+                        placeholder=MOBILE_PLACEHOLDER,
+                        help=MOBILE_HELP,
+                    )
                     ewa = st.text_input(
                         "Personal WhatsApp Number",
                         value=vendor.get("personal_whatsapp") or "",
+                        placeholder=MOBILE_PLACEHOLDER,
+                        help=MOBILE_HELP,
                     )
-                    ee = st.text_input("Email", value=vendor.get("contact_email") or "")
+                    ee = st.text_input(
+                        "Email",
+                        value=vendor.get("contact_email") or "",
+                        placeholder=EMAIL_PLACEHOLDER,
+                    )
                     ed = st.text_area("Description", value=vendor.get("description") or "")
                     c1, c2 = st.columns(2)
                     if c1.form_submit_button("Update"):
-                        client.table("vendors").update(
-                            {
-                                "first_name": fn.strip(),
-                                "last_name": ln.strip(),
-                                "category_id": category_id,
-                                "contact_phone": ep,
-                                "personal_whatsapp": ewa.strip() or None,
-                                "contact_email": ee,
-                                "description": ed,
-                            }
-                        ).eq("id", vendor["id"]).execute()
-                        st.rerun()
+                        format_errors = contact_field_errors(
+                            email=ee,
+                            phone=ep,
+                            whatsapp=ewa,
+                            whatsapp_label="Personal WhatsApp Number",
+                        )
+                        if format_errors:
+                            for err in format_errors:
+                                st.error(err)
+                        else:
+                            duplicate = duplicate_contact_message(
+                                client,
+                                [ep, ewa],
+                                exclude_vendor_id=vendor["id"],
+                            )
+                            if duplicate:
+                                st.error(duplicate)
+                            else:
+                                try:
+                                    client.table("vendors").update(
+                                        {
+                                            "first_name": fn.strip(),
+                                            "last_name": ln.strip(),
+                                            "category_id": category_id,
+                                            "contact_phone": ep,
+                                            "personal_whatsapp": ewa.strip() or None,
+                                            "contact_email": ee,
+                                            "description": ed,
+                                        }
+                                    ).eq("id", vendor["id"]).execute()
+                                    st.rerun()
+                                except Exception as exc:
+                                    st.error(
+                                        message_if_duplicate_db_error(exc)
+                                        or f"Could not update vendor: {exc}"
+                                    )
                     if c2.form_submit_button("Delete"):
                         client.table("vendors").delete().eq("id", vendor["id"]).execute()
                         st.rerun()
@@ -587,7 +655,12 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
     current_title = profile.get("title") or ""
     title_index = TITLE_OPTIONS.index(current_title) if current_title in TITLE_OPTIONS else 0
 
-    email = st.text_input("Email *", value=profile.get("email") or "", key="profile_email")
+    email = st.text_input(
+        "Email *",
+        value=profile.get("email") or "",
+        key="profile_email",
+        placeholder=EMAIL_PLACEHOLDER,
+    )
     member_group_id, member_sub_group_id = render_group_sub_group_fields(
         client,
         groups,
@@ -618,10 +691,17 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
             value=int(profile.get("age") or MIN_AGE),
             step=1,
         )
-        phone = st.text_input("Phone", value=profile.get("phone") or "")
+        phone = st.text_input(
+            "Phone",
+            value=profile.get("phone") or "",
+            placeholder=MOBILE_PLACEHOLDER,
+            help=MOBILE_HELP,
+        )
         personal_whatsapp = st.text_input(
             "Personal WhatsApp Number",
             value=profile.get("personal_whatsapp") or "",
+            placeholder=MOBILE_PLACEHOLDER,
+            help=MOBILE_HELP,
         )
         flat_number = st.text_input(
             "Flat / Unit Number *" if not is_admin_user else "Flat / Unit Number",
@@ -670,8 +750,15 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
             if not last_name.strip():
                 errors.append("Last name is required.")
             errors.extend(sex_age_validation_errors(sex, age))
-            if not email.strip():
-                errors.append("Email is required.")
+            errors.extend(
+                contact_field_errors(
+                    email=email,
+                    email_required=True,
+                    phone=phone,
+                    whatsapp=personal_whatsapp,
+                    whatsapp_label="Personal WhatsApp Number",
+                )
+            )
             errors.extend(validate_extended_profile_fields(extended_fields))
             if errors:
                 for err in errors:
@@ -709,6 +796,8 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
                 tower_id=selected_tower_id,
                 email=email,
                 extended_fields=extended_fields,
+                phone=phone,
+                personal_whatsapp=personal_whatsapp,
             )
             if errors:
                 for err in errors:
@@ -740,6 +829,15 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
                 st.info("No changes to save.")
                 return
 
+        duplicate = duplicate_contact_message(
+            client,
+            [phone, personal_whatsapp],
+            exclude_profile_id=profile["id"],
+        )
+        if duplicate:
+            st.error(duplicate)
+            return
+
         try:
             if email.strip().lower() != (profile.get("email") or "").lower():
                 client.auth.update_user({"email": email.strip()})
@@ -750,7 +848,10 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
         try:
             client.table("profiles").update(payload).eq("id", profile["id"]).execute()
         except Exception as exc:
-            st.error(f"Could not update profile: {exc}")
+            st.error(
+                message_if_duplicate_db_error(exc)
+                or f"Could not update profile: {exc}"
+            )
             return
 
         refreshed = fetch_profile(client)
