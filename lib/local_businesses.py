@@ -14,6 +14,7 @@ from lib.local_business_ratings import (
     summarize_business_ratings,
 )
 from lib.contact_numbers import duplicate_contact_message, message_if_duplicate_db_error
+from lib.contact_privacy import format_visible_contact
 from lib.profile_utils import format_name
 from lib.supabase_client import SchemaClient
 from lib.validation import EMAIL_PLACEHOLDER, MOBILE_HELP, MOBILE_PLACEHOLDER, contact_field_errors
@@ -241,6 +242,16 @@ def render_local_businesses(
             placeholder=MOBILE_PLACEHOLDER,
             help=MOBILE_HELP,
         )
+        mask_phone = st.checkbox(
+            "Hide this mobile number from other members",
+            key=f"{key_prefix}_add_mask_phone",
+            help="Administrators can still see this number.",
+        )
+        mask_whatsapp = st.checkbox(
+            "Hide this WhatsApp number from other members",
+            key=f"{key_prefix}_add_mask_wa",
+            help="Administrators can still see this number.",
+        )
         add_society_id, add_tower_id = _render_society_tower(
             client,
             societies,
@@ -289,8 +300,10 @@ def render_local_businesses(
                                 "first_name": first_name.strip(),
                                 "last_name": last_name.strip(),
                                 "description": description.strip() or None,
-                                "phone": phone.strip() or None,
-                                "whatsapp_number": whatsapp_number.strip() or None,
+                            "phone": phone.strip() or None,
+                            "whatsapp_number": whatsapp_number.strip() or None,
+                            "mask_phone": bool(mask_phone),
+                            "mask_whatsapp": bool(mask_whatsapp),
                                 "whatsapp_group_link": whatsapp_group_link.strip() or None,
                                 "timing": timing.strip() or None,
                                 "week_off": week_off,
@@ -387,8 +400,8 @@ def render_local_businesses(
             if business.get("description"):
                 st.write(business["description"])
             st.write(
-                f"Phone: {business.get('phone') or '—'} · "
-                f"WhatsApp: {business.get('whatsapp_number') or '—'}"
+                f"Phone: {format_visible_contact(business.get('phone'), masked=bool(business.get('mask_phone')), viewer_is_admin=admin, viewer_is_owner=business.get('added_by') == user_id)} · "
+                f"WhatsApp: {format_visible_contact(business.get('whatsapp_number'), masked=bool(business.get('mask_whatsapp')), viewer_is_admin=admin, viewer_is_owner=business.get('added_by') == user_id)}"
             )
             if business.get("whatsapp_group_link"):
                 st.markdown(
@@ -474,6 +487,18 @@ def render_local_businesses(
                 placeholder=MOBILE_PLACEHOLDER,
                 help=MOBILE_HELP,
             )
+            edit_mask_phone = st.checkbox(
+                "Hide this mobile number from other members",
+                value=bool(business.get("mask_phone")),
+                key=f"{key_prefix}_edit_mask_phone_{business['id']}",
+                help="Administrators can still see this number.",
+            )
+            edit_mask_whatsapp = st.checkbox(
+                "Hide this WhatsApp number from other members",
+                value=bool(business.get("mask_whatsapp")),
+                key=f"{key_prefix}_edit_mask_wa_{business['id']}",
+                help="Administrators can still see this number.",
+            )
             edit_society_id, edit_tower_id = _render_society_tower(
                 client,
                 societies,
@@ -536,6 +561,8 @@ def render_local_businesses(
                             "description": edit_desc.strip() or None,
                             "phone": edit_phone.strip() or None,
                             "whatsapp_number": edit_wa.strip() or None,
+                            "mask_phone": bool(edit_mask_phone),
+                            "mask_whatsapp": bool(edit_mask_whatsapp),
                             "whatsapp_group_link": edit_wa_group.strip() or None,
                             "timing": edit_timing.strip() or None,
                             "week_off": edit_week_off,

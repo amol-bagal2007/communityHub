@@ -10,6 +10,7 @@ from lib.profile_extended_fields import (
     PARKING_UNIT_LABELS,
     parking_share_label,
 )
+from lib.contact_privacy import format_visible_contact
 from lib.profile_utils import format_name
 from lib.supabase_client import SchemaClient
 
@@ -86,24 +87,32 @@ def cancel_parking_allocation(client: SchemaClient, *, request_id: str) -> str |
 
 
 def load_my_parking_requests(client: SchemaClient, user_id: str) -> list[dict]:
-    try:
-        return (
-            client.table("parking_requests")
-            .select(
-                "*, "
-                "owner:profiles!parking_requests_owner_id_fkey"
-                "(id, first_name, last_name, title, parking_number, parking_floor), "
-                "requester:profiles!parking_requests_requester_id_fkey"
-                "(id, first_name, last_name, title, phone, email, flat_number)"
+    selects = (
+        "*, "
+        "owner:profiles!parking_requests_owner_id_fkey"
+        "(id, first_name, last_name, title, parking_number, parking_floor), "
+        "requester:profiles!parking_requests_requester_id_fkey"
+        "(id, first_name, last_name, title, phone, mask_phone, email, flat_number)",
+        "*, "
+        "owner:profiles!parking_requests_owner_id_fkey"
+        "(id, first_name, last_name, title, parking_number, parking_floor), "
+        "requester:profiles!parking_requests_requester_id_fkey"
+        "(id, first_name, last_name, title, phone, email, flat_number)",
+    )
+    for columns in selects:
+        try:
+            return (
+                client.table("parking_requests")
+                .select(columns)
+                .or_(f"owner_id.eq.{user_id},requester_id.eq.{user_id}")
+                .order("created_at", desc=True)
+                .execute()
+                .data
+                or []
             )
-            .or_(f"owner_id.eq.{user_id},requester_id.eq.{user_id}")
-            .order("created_at", desc=True)
-            .execute()
-            .data
-            or []
-        )
-    except Exception:
-        return []
+        except Exception:
+            continue
+    return []
 
 
 def format_parking_terms(row: dict[str, Any]) -> str:
@@ -189,8 +198,14 @@ def render_available_parking(client: SchemaClient, profile: dict) -> None:
                     f"**{format_name(requester, 'Member')}** "
                     f"(Flat: {requester.get('flat_number') or '—'})"
                 )
-                if requester.get("phone"):
-                    st.caption(f"Phone: {requester['phone']}")
+                phone = format_visible_contact(
+                    requester.get("phone"),
+                    masked=bool(requester.get("mask_phone")),
+                    viewer_is_admin=profile.get("role") == "admin",
+                    viewer_is_owner=requester.get("id") == user_id,
+                )
+                if phone != "—":
+                    st.caption(f"Phone: {phone}")
                 if req.get("request_message"):
                     st.write(f"Message: {req['request_message']}")
                 comment = st.text_area(

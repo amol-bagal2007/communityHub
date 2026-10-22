@@ -65,10 +65,13 @@ from lib.vendor_ratings import (
     user_has_recommended,
 )
 from lib.contact_numbers import duplicate_contact_message, message_if_duplicate_db_error
+from lib.contact_privacy import format_visible_contact
+from lib.feedback import render_feedback
 from lib.local_businesses import INFO_NOTE, render_local_businesses
 from lib.visibility import (
     FLAG_AVAILABLE_PARKING_TAB,
     FLAG_EVENTS_TAB,
+    FLAG_FEEDBACK_TAB,
     FLAG_LOCAL_BUSINESS_TAB,
     FLAG_VENDORS_TAB,
     load_societies,
@@ -91,6 +94,7 @@ def render_admin_dashboard(client: SchemaClient) -> None:
         tab_local_business,
         tab_parking,
         tab_events,
+        tab_feedback,
     ) = st.tabs(
         [
             "Pending Approvals",
@@ -100,6 +104,7 @@ def render_admin_dashboard(client: SchemaClient) -> None:
             "Local Business",
             "Available Parking",
             "Events",
+            "Feedback/Suggestion",
         ]
     )
 
@@ -123,6 +128,17 @@ def render_admin_dashboard(client: SchemaClient) -> None:
 
     with tab_events:
         _render_events_crud(client)
+
+    with tab_feedback:
+        render_feature_toggle(
+            client,
+            key=FLAG_FEEDBACK_TAB,
+            label="Enable Feedback/Suggestion tab for members",
+            help_text="When checked, approved members see the Feedback/Suggestion tab.",
+            widget_key="admin_enable_feedback_tab",
+        )
+        st.divider()
+        render_feedback(client, admin=True)
 
 
 def _render_pending_approvals(client: SchemaClient) -> None:
@@ -162,7 +178,10 @@ def _render_pending_approvals(client: SchemaClient) -> None:
                 )
                 st.markdown(
                     f"**{user.get('title') or ''} {format_name(user)}** ({role_label(user['role'])})  \n"
-                    f"{user['email']} · {user.get('phone') or '—'}  \n"
+                    f"{user['email']} · {user.get('phone') or '—'}"
+                    f"{' (hidden from other members)' if user.get('mask_phone') else ''}"
+                    f"{(' · WhatsApp ' + user['personal_whatsapp']) if user.get('personal_whatsapp') else ''}"
+                    f"{' (hidden from other members)' if user.get('personal_whatsapp') and user.get('mask_whatsapp') else ''}  \n"
                     f"Sex: {user.get('sex') or '—'} · Age: {user.get('age') or '—'}  \n"
                     f"{group_line}"
                     f"{society} · Tower {tower} · Flat {user.get('flat_number') or '—'}"
@@ -170,18 +189,48 @@ def _render_pending_approvals(client: SchemaClient) -> None:
                 )
             with col2:
                 if st.button("Approve", key=f"approve_{user['id']}", type="primary"):
-                    client.table("profiles").update({"status": "approved"}).eq(
-                        "id", user["id"]
-                    ).execute()
-                    st.success(f"Approved {format_name(user)}")
-                    st.rerun()
+                    try:
+                        updated = (
+                            client.table("profiles")
+                            .update({"status": "approved"})
+                            .eq("id", user["id"])
+                            .execute()
+                            .data
+                            or []
+                        )
+                    except Exception as exc:
+                        st.error(
+                            message_if_duplicate_db_error(exc)
+                            or f"Could not approve this user: {exc}"
+                        )
+                    else:
+                        if not updated:
+                            st.error("Could not approve this user. The update was not saved.")
+                        else:
+                            st.success(f"Approved {format_name(user)}")
+                            st.rerun()
             with col3:
                 if st.button("Reject", key=f"reject_{user['id']}"):
-                    client.table("profiles").update({"status": "rejected"}).eq(
-                        "id", user["id"]
-                    ).execute()
-                    st.warning(f"Rejected {format_name(user)}")
-                    st.rerun()
+                    try:
+                        updated = (
+                            client.table("profiles")
+                            .update({"status": "rejected"})
+                            .eq("id", user["id"])
+                            .execute()
+                            .data
+                            or []
+                        )
+                    except Exception as exc:
+                        st.error(
+                            message_if_duplicate_db_error(exc)
+                            or f"Could not reject this user: {exc}"
+                        )
+                    else:
+                        if not updated:
+                            st.error("Could not reject this user. The update was not saved.")
+                        else:
+                            st.warning(f"Rejected {format_name(user)}")
+                            st.rerun()
 
 
 def _on_admin_add_society_change() -> None:
@@ -1040,6 +1089,14 @@ def _render_vendors_crud(client: SchemaClient) -> None:
             placeholder=MOBILE_PLACEHOLDER,
             help=MOBILE_HELP,
         )
+        mask_vendor_phone = st.checkbox(
+            "Hide this mobile number from other members",
+            help="Administrators can still see this number.",
+        )
+        mask_vendor_whatsapp = st.checkbox(
+            "Hide this WhatsApp number from other members",
+            help="Administrators can still see this number.",
+        )
         contact_email = st.text_input("Email", placeholder=EMAIL_PLACEHOLDER)
         description = st.text_area("Description")
         society_name = st.selectbox("Society", list(soc_map.keys()) if soc_map else [""])
@@ -1078,8 +1135,10 @@ def _render_vendors_crud(client: SchemaClient) -> None:
                                         "last_name": last_name.strip(),
                                         "recommended_by": recommended_by.strip() or None,
                                         "category_id": category_id,
-                                        "contact_phone": contact_phone.strip() or None,
-                                        "personal_whatsapp": personal_whatsapp.strip() or None,
+                                    "contact_phone": contact_phone.strip() or None,
+                                    "personal_whatsapp": personal_whatsapp.strip() or None,
+                                    "mask_phone": bool(mask_vendor_phone),
+                                    "mask_whatsapp": bool(mask_vendor_whatsapp),
                                         "contact_email": contact_email.strip() or None,
                                         "description": description.strip() or None,
                                         "society_id": soc_map[society_name],
@@ -1165,8 +1224,8 @@ def _render_vendors_crud(client: SchemaClient) -> None:
             st.write(f"Originally recommended by: {vendor.get('recommended_by') or '—'}")
             st.write(feedback_caption(summary_data))
             st.write(
-                f"Phone: {vendor.get('contact_phone') or '—'} | "
-                f"WhatsApp: {vendor.get('personal_whatsapp') or '—'} | "
+                f"Phone: {format_visible_contact(vendor.get('contact_phone'), masked=bool(vendor.get('mask_phone')), viewer_is_admin=True)} | "
+                f"WhatsApp: {format_visible_contact(vendor.get('personal_whatsapp'), masked=bool(vendor.get('mask_whatsapp')), viewer_is_admin=True)} | "
                 f"Email: {vendor.get('contact_email') or '—'}"
             )
             if vendor.get("description"):
@@ -1232,6 +1291,16 @@ def _render_vendors_crud(client: SchemaClient) -> None:
                     value=vendor.get("contact_email") or "",
                     placeholder=EMAIL_PLACEHOLDER,
                 )
+                mask_vendor_phone = st.checkbox(
+                    "Hide this mobile number from other members",
+                    value=bool(vendor.get("mask_phone")),
+                    help="Administrators can still see this number.",
+                )
+                mask_vendor_whatsapp = st.checkbox(
+                    "Hide this WhatsApp number from other members",
+                    value=bool(vendor.get("mask_whatsapp")),
+                    help="Administrators can still see this number.",
+                )
                 ed = st.text_area("Description", value=vendor.get("description") or "")
                 c1, c2 = st.columns(2)
                 if c1.form_submit_button("Update"):
@@ -1260,9 +1329,11 @@ def _render_vendors_crud(client: SchemaClient) -> None:
                                         "last_name": ln.strip(),
                                         "recommended_by": rb.strip() or None,
                                         "category_id": category_id,
-                                        "contact_phone": ep,
-                                        "personal_whatsapp": ewa.strip() or None,
-                                        "contact_email": ee,
+                                    "contact_phone": ep,
+                                    "personal_whatsapp": ewa.strip() or None,
+                                    "mask_phone": bool(mask_vendor_phone),
+                                    "mask_whatsapp": bool(mask_vendor_whatsapp),
+                                    "contact_email": ee,
                                         "description": ed,
                                     }
                                 ).eq("id", vendor["id"]).execute()

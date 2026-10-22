@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+from lib.auth import is_admin
+from lib.contact_privacy import HIDDEN_CONTACT, format_visible_contact
 from lib.profile_utils import format_name
 from lib.supabase_client import SchemaClient
 
@@ -30,7 +32,7 @@ def load_admin_contacts(client: SchemaClient) -> tuple[list[dict], str | None]:
         try:
             rows = (
                 client.table("profiles")
-                .select("first_name, last_name, title, phone, email")
+                .select("first_name, last_name, title, phone, email, mask_phone")
                 .eq("role", "admin")
                 .eq("status", "approved")
                 .order("first_name")
@@ -53,7 +55,10 @@ def format_admin_contact_offline(admins: list[dict]) -> str:
     parts: list[str] = []
     for admin in admins:
         name = format_name(admin, "Administrator")
-        phone = (admin.get("phone") or "").strip() or "—"
+        phone = format_visible_contact(
+            admin.get("phone"),
+            masked=bool(admin.get("mask_phone")),
+        )
         email = (admin.get("email") or "").strip() or "—"
         parts.append(f"**{name}** — {phone} — {email}")
     return "; ".join(parts)
@@ -78,15 +83,20 @@ def render_admin_contacts(client: SchemaClient, *, heading: str = "Contact Admin
 
     for admin in admins:
         name = format_name(admin, "Administrator")
-        phone = (admin.get("phone") or "").strip()
+        phone = format_visible_contact(
+            admin.get("phone"),
+            masked=bool(admin.get("mask_phone")),
+            viewer_is_admin=is_admin(),
+        )
         email = (admin.get("email") or "").strip()
         with st.container(border=True):
             title = (admin.get("title") or "").strip()
             st.markdown(f"**{title + ' ' if title else ''}{name}**")
-            if phone:
-                st.markdown(f"Mobile: [{phone}](tel:{phone})")
+            raw_phone = (admin.get("phone") or "").strip()
+            if phone == HIDDEN_CONTACT or not raw_phone:
+                st.write(f"Mobile: {phone or '—'}")
             else:
-                st.write("Mobile: —")
+                st.markdown(f"Mobile: [{phone}](tel:{raw_phone})")
             if email:
                 st.markdown(f"Email: [{email}](mailto:{email})")
             else:

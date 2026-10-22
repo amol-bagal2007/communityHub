@@ -90,6 +90,8 @@ def build_profile_update_payload(
     tenant_expiry: date | None,
     for_reapproval: bool,
     personal_whatsapp: str = "",
+    mask_phone: bool = False,
+    mask_whatsapp: bool = False,
     extended_fields: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized_age = normalize_age(age)
@@ -101,6 +103,8 @@ def build_profile_update_payload(
         "age": normalized_age,
         "phone": phone.strip() or None,
         "personal_whatsapp": (personal_whatsapp or "").strip() or None,
+        "mask_phone": bool(mask_phone),
+        "mask_whatsapp": bool(mask_whatsapp),
         "email": email.strip(),
         "member_group_id": member_group_id,
         "member_sub_group_id": member_sub_group_id,
@@ -127,6 +131,8 @@ def profile_has_changes(profile: dict, payload: dict[str, Any]) -> bool:
         "age": payload.get("age"),
         "phone": payload.get("phone"),
         "personal_whatsapp": payload.get("personal_whatsapp"),
+        "mask_phone": bool(payload.get("mask_phone")),
+        "mask_whatsapp": bool(payload.get("mask_whatsapp")),
         "email": payload.get("email"),
         "member_group_id": payload.get("member_group_id"),
         "member_sub_group_id": payload.get("member_sub_group_id"),
@@ -142,6 +148,10 @@ def profile_has_changes(profile: dict, payload: dict[str, Any]) -> bool:
 
     for key, new_value in comparable.items():
         old_value = profile.get(key)
+        if key in ("mask_phone", "mask_whatsapp"):
+            if bool(old_value) != bool(new_value):
+                return True
+            continue
         if key == "tenant_expiry_date":
             old_str = str(old_value)[:10] if old_value else None
             new_str = str(new_value)[:10] if new_value else None

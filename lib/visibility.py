@@ -8,6 +8,7 @@ FLAG_VENDORS_TAB = "vendors_tab"
 FLAG_EVENTS_TAB = "events_tab"
 FLAG_LOCAL_BUSINESS_TAB = "local_business_tab"
 FLAG_AVAILABLE_PARKING_TAB = "available_parking_tab"
+FLAG_FEEDBACK_TAB = "feedback_tab"
 
 
 def is_feature_enabled(client: SchemaClient, key: str, *, default: bool = False) -> bool:

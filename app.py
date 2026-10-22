@@ -1,5 +1,6 @@
 import streamlit as st
 
+from lib.admin_contacts import render_admin_contacts
 from lib.auth import (
     clear_session,
     get_profile,
@@ -20,11 +21,13 @@ from lib.pwa import inject_pwa_meta
 from lib.supabase_client import get_client
 from views.admin import render_admin_dashboard
 from views.auth import render_auth
-from views.user import render_profile_page, render_user_dashboard
+from views.user import render_profile_page, render_society_page, render_user_dashboard
 
 NAV_KEY = "app_nav_page"
 NAV_DASHBOARD = "dashboard"
 NAV_PROFILE = "profile"
+NAV_SOCIETY = "society"
+NAV_CONTACT = "contact"
 
 
 def main() -> None:
@@ -100,6 +103,16 @@ Your exclusive neighborhood portal built to make society living effortless. Reco
         render_profile_page(client, profile)
         return
 
+    if page == NAV_SOCIETY:
+        st.title("🏘️ CommunityHub")
+        render_society_page(client, profile)
+        return
+
+    if page == NAV_CONTACT:
+        st.title("🏘️ CommunityHub")
+        render_admin_contacts(client)
+        return
+
     if is_admin():
         render_admin_dashboard(client)
     elif is_approved_user():
@@ -137,6 +150,22 @@ def _render_sidebar(client) -> None:
                         key="nav_profile",
                     ):
                         st.session_state[NAV_KEY] = NAV_PROFILE
+                        st.rerun()
+                    if st.button(
+                        "My Society",
+                        use_container_width=True,
+                        type="primary" if current == NAV_SOCIETY else "secondary",
+                        key="nav_society",
+                    ):
+                        st.session_state[NAV_KEY] = NAV_SOCIETY
+                        st.rerun()
+                    if st.button(
+                        "Contact",
+                        use_container_width=True,
+                        type="primary" if current == NAV_CONTACT else "secondary",
+                        key="nav_contact",
+                    ):
+                        st.session_state[NAV_KEY] = NAV_CONTACT
                         st.rerun()
                     st.divider()
             if st.button("Logout", use_container_width=True):

@@ -59,13 +59,15 @@ from lib.vendor_ratings import (
     summarize_vendor_feedback,
     user_has_recommended,
 )
-from lib.admin_contacts import render_admin_contacts
+from lib.feedback import render_feedback
 from lib.contact_numbers import duplicate_contact_message, message_if_duplicate_db_error
+from lib.contact_privacy import format_visible_contact
 from lib.local_businesses import INFO_NOTE, render_local_businesses
 from lib.parking_share import render_available_parking
 from lib.visibility import (
     FLAG_AVAILABLE_PARKING_TAB,
     FLAG_EVENTS_TAB,
+    FLAG_FEEDBACK_TAB,
     FLAG_LOCAL_BUSINESS_TAB,
     FLAG_VENDORS_TAB,
     is_feature_enabled,
@@ -87,6 +89,7 @@ def render_user_dashboard(client: SchemaClient) -> None:
     show_available_parking = is_feature_enabled(
         client, FLAG_AVAILABLE_PARKING_TAB, default=False
     )
+    show_feedback = is_feature_enabled(client, FLAG_FEEDBACK_TAB, default=False)
 
     tab_defs: list[tuple[str, str]] = []
     if show_events:
@@ -97,8 +100,12 @@ def render_user_dashboard(client: SchemaClient) -> None:
         tab_defs.append(("Local Business", "local_business"))
     if show_available_parking:
         tab_defs.append(("Available Parking", "available_parking"))
-    tab_defs.append(("My Society", "society"))
-    tab_defs.append(("Contact", "contact"))
+    if show_feedback:
+        tab_defs.append(("Feedback/Suggestion", "feedback"))
+
+    if not tab_defs:
+        st.info("No community tabs are enabled yet. Open My Society or Contact from the left menu.")
+        return
 
     tabs = st.tabs([label for label, _ in tab_defs])
     for tab, (_, kind) in zip(tabs, tab_defs):
@@ -111,10 +118,10 @@ def render_user_dashboard(client: SchemaClient) -> None:
                 render_local_businesses(client, profile, admin=False)
             elif kind == "available_parking":
                 render_available_parking(client, profile)
-            elif kind == "contact":
-                render_admin_contacts(client)
+            elif kind == "feedback":
+                render_feedback(client, admin=False)
             else:
-                _render_society_info(client, profile)
+                st.info("Open My Society or Contact from the left menu.")
 
 
 def render_profile_page(client: SchemaClient, profile: dict) -> None:
@@ -270,6 +277,14 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
                 placeholder=MOBILE_PLACEHOLDER,
                 help=MOBILE_HELP,
             )
+            mask_vendor_phone = st.checkbox(
+                "Hide this mobile number from other members",
+                help="Administrators can still see this number.",
+            )
+            mask_vendor_whatsapp = st.checkbox(
+                "Hide this WhatsApp number from other members",
+                help="Administrators can still see this number.",
+            )
             email = st.text_input("Email", placeholder=EMAIL_PLACEHOLDER)
             description = st.text_area("Description")
             if st.form_submit_button("Submit Vendor", type="primary"):
@@ -306,6 +321,8 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
                                         "category_id": category_id,
                                         "contact_phone": phone.strip() or None,
                                         "personal_whatsapp": personal_whatsapp.strip() or None,
+                                        "mask_phone": bool(mask_vendor_phone),
+                                        "mask_whatsapp": bool(mask_vendor_whatsapp),
                                         "contact_email": email.strip() or None,
                                         "description": description.strip() or None,
                                         "society_id": society_id,
@@ -393,9 +410,10 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
                 st.caption(f"Originally recommended by {vendor['recommended_by']}")
             st.write(feedback_caption(summary_data))
             if vendor.get("contact_phone") or vendor.get("personal_whatsapp") or vendor.get("contact_email"):
+                viewer_is_owner = vendor.get("added_by") == profile["id"]
                 st.write(
-                    f"📞 {vendor.get('contact_phone') or '—'}  "
-                    f"| WhatsApp: {vendor.get('personal_whatsapp') or '—'}  "
+                    f"📞 {format_visible_contact(vendor.get('contact_phone'), masked=bool(vendor.get('mask_phone')), viewer_is_owner=viewer_is_owner)}  "
+                    f"| WhatsApp: {format_visible_contact(vendor.get('personal_whatsapp'), masked=bool(vendor.get('mask_whatsapp')), viewer_is_owner=viewer_is_owner)}  "
                     f"| ✉️ {vendor.get('contact_email') or '—'}"
                 )
             if vendor.get("description"):
@@ -460,6 +478,16 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
                         value=vendor.get("contact_email") or "",
                         placeholder=EMAIL_PLACEHOLDER,
                     )
+                    mask_vendor_phone = st.checkbox(
+                        "Hide this mobile number from other members",
+                        value=bool(vendor.get("mask_phone")),
+                        help="Administrators can still see this number.",
+                    )
+                    mask_vendor_whatsapp = st.checkbox(
+                        "Hide this WhatsApp number from other members",
+                        value=bool(vendor.get("mask_whatsapp")),
+                        help="Administrators can still see this number.",
+                    )
                     ed = st.text_area("Description", value=vendor.get("description") or "")
                     c1, c2 = st.columns(2)
                     if c1.form_submit_button("Update"):
@@ -489,6 +517,8 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
                                             "category_id": category_id,
                                             "contact_phone": ep,
                                             "personal_whatsapp": ewa.strip() or None,
+                                            "mask_phone": bool(mask_vendor_phone),
+                                            "mask_whatsapp": bool(mask_vendor_whatsapp),
                                             "contact_email": ee,
                                             "description": ed,
                                         }
@@ -502,6 +532,11 @@ def _render_vendors(client: SchemaClient, profile: dict) -> None:
                     if c2.form_submit_button("Delete"):
                         client.table("vendors").delete().eq("id", vendor["id"]).execute()
                         st.rerun()
+
+
+def render_society_page(client: SchemaClient, profile: dict) -> None:
+    """Public entry point for the sidebar My Society screen."""
+    _render_society_info(client, profile)
 
 
 def _render_society_info(client: SchemaClient, profile: dict) -> None:
@@ -703,6 +738,16 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
             placeholder=MOBILE_PLACEHOLDER,
             help=MOBILE_HELP,
         )
+        mask_phone = st.checkbox(
+            "Hide my mobile number from other members",
+            value=bool(profile.get("mask_phone")),
+            help="Administrators can still see this number.",
+        )
+        mask_whatsapp = st.checkbox(
+            "Hide my WhatsApp number from other members",
+            value=bool(profile.get("mask_whatsapp")),
+            help="Administrators can still see this number.",
+        )
         flat_number = st.text_input(
             "Flat / Unit Number *" if not is_admin_user else "Flat / Unit Number",
             value=profile.get("flat_number") or "",
@@ -773,6 +818,8 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
                 "age": normalize_age(age),
                 "phone": phone.strip() or None,
                 "personal_whatsapp": personal_whatsapp.strip() or None,
+                "mask_phone": bool(mask_phone),
+                "mask_whatsapp": bool(mask_whatsapp),
                 "email": email.strip(),
                 "member_group_id": member_group_id,
                 "member_sub_group_id": member_sub_group_id,
@@ -822,6 +869,8 @@ def _render_profile(client: SchemaClient, profile: dict) -> None:
                 staying_within_society=staying_within_society,
                 tenant_expiry=tenant_expiry,
                 for_reapproval=False,
+                mask_phone=bool(mask_phone),
+                mask_whatsapp=bool(mask_whatsapp),
                 extended_fields=extended_fields,
             )
 

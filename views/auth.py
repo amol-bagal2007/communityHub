@@ -220,6 +220,16 @@ def _render_signup(client: SchemaClient) -> None:
         placeholder=MOBILE_PLACEHOLDER,
         help=MOBILE_HELP,
     )
+    mask_phone = st.checkbox(
+        "Hide my mobile number from other members",
+        key="signup_mask_phone",
+        help="Administrators can still see this number.",
+    )
+    mask_whatsapp = st.checkbox(
+        "Hide my WhatsApp number from other members",
+        key="signup_mask_whatsapp",
+        help="Administrators can still see this number.",
+    )
     email = st.text_input("Email *", placeholder=EMAIL_PLACEHOLDER, key="signup_email")
     password = st.text_input(
         "Password *",
@@ -307,6 +317,8 @@ def _render_signup(client: SchemaClient) -> None:
             "age": int(age),
             "phone": phone.strip() or None,
             "personal_whatsapp": personal_whatsapp.strip() or None,
+            "mask_phone": bool(mask_phone),
+            "mask_whatsapp": bool(mask_whatsapp),
             "role": role,
             "society_id": society_id,
             "tower_id": tower_options[tower_name],
