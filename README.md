@@ -32,34 +32,9 @@ All tables live under `community_hub`:
 
 Migrations are applied via Supabase MCP. Local reference: `supabase/migrations/`.
 
-## Setup
-
-```bash
-pip install -r requirements.txt
-```
-
-Configure `.env` (see `.env.example`):
-
-```
-SUPABASE_URL=https://gbtehdbjqmoelejgdfqd.supabase.co
-SUPABASE_KEY=your-anon-key
-SUPABASE_SCHEMA=community_hub
-APP_URL=http://localhost:8501
-```
 
 `APP_URL` is used for password reset email links. In production, set this to your deployed HTTPS URL.
 
-## Deploy (free)
-
-**Do not use Vercel** for this app — Streamlit needs a long-running Python server with WebSockets; Vercel free hosting does not support that.
-
-Use **Streamlit Community Cloud** (free) instead. Full steps: see [`DEPLOY.md`](DEPLOY.md).
-
-Short version:
-1. Push to GitHub (never commit `.env`)
-2. Go to [share.streamlit.io](https://share.streamlit.io) → New app → this repo → `app.py`
-3. Add Secrets (`SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SCHEMA`, `APP_URL`)
-4. Deploy, then set Supabase Auth redirect URLs to your `*.streamlit.app` URL
 
 ### Forgot password setup
 
@@ -100,18 +75,6 @@ If registration fails with **"Email signups are disabled"**:
 
 Also under **Authentication → URL Configuration**, add your app URL to **Redirect URLs** for password reset.
 
-### Create the first admin
-
-1. Supabase Dashboard → **Authentication → Users → Add user**
-2. SQL Editor:
-
-```sql
-UPDATE community_hub.profiles
-SET role = 'admin', status = 'approved'
-WHERE email = 'your-admin@email.com';
-```
-
-3. Log in as admin and add society/tower details before users sign up.
 
 ### Run
 
