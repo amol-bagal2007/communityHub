@@ -35,16 +35,21 @@ def inject_mobile_styles() -> None:
 
             .stTabs [data-baseweb="tab-list"] {
                 gap: 0.35rem;
-                overflow-x: auto !important;
-                flex-wrap: nowrap !important;
-                -webkit-overflow-scrolling: touch;
-                scrollbar-width: thin;
+                overflow: visible !important;
+                flex-wrap: wrap !important;
+                height: auto !important;
+                max-height: none !important;
+            }
+            .stTabs [data-baseweb="tab-highlight"],
+            .stTabs [data-baseweb="tab-border"] {
+                display: none !important;
             }
             .stTabs [data-baseweb="tab"] {
                 white-space: nowrap;
                 font-size: 0.92rem;
                 padding-left: 0.7rem;
                 padding-right: 0.7rem;
+                height: auto !important;
             }
 
             [data-testid="stExpander"],
@@ -84,6 +89,7 @@ def inject_mobile_styles() -> None:
 
                 div.stButton > button,
                 div.stDownloadButton > button,
+                div[data-testid="stLinkButton"] > a,
                 div[data-testid="stFormSubmitButton"] > button {
                     width: 100%;
                 }

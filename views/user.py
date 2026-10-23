@@ -60,6 +60,7 @@ from lib.vendor_ratings import (
     user_has_recommended,
 )
 from lib.feedback import render_feedback
+from lib.share_ride import render_share_ride
 from lib.contact_numbers import duplicate_contact_message, message_if_duplicate_db_error
 from lib.contact_privacy import format_visible_contact
 from lib.local_businesses import INFO_NOTE, render_local_businesses
@@ -69,6 +70,7 @@ from lib.visibility import (
     FLAG_EVENTS_TAB,
     FLAG_FEEDBACK_TAB,
     FLAG_LOCAL_BUSINESS_TAB,
+    FLAG_SHARE_RIDE_TAB,
     FLAG_VENDORS_TAB,
     is_feature_enabled,
     load_societies,
@@ -90,6 +92,7 @@ def render_user_dashboard(client: SchemaClient) -> None:
         client, FLAG_AVAILABLE_PARKING_TAB, default=False
     )
     show_feedback = is_feature_enabled(client, FLAG_FEEDBACK_TAB, default=False)
+    show_share_ride = is_feature_enabled(client, FLAG_SHARE_RIDE_TAB, default=False)
 
     tab_defs: list[tuple[str, str]] = []
     if show_events:
@@ -102,6 +105,8 @@ def render_user_dashboard(client: SchemaClient) -> None:
         tab_defs.append(("Available Parking", "available_parking"))
     if show_feedback:
         tab_defs.append(("Feedback/Suggestion", "feedback"))
+    if show_share_ride:
+        tab_defs.append(("Share a Ride", "share_ride"))
 
     if not tab_defs:
         st.info("No community tabs are enabled yet. Open My Society or Contact from the left menu.")
@@ -120,6 +125,8 @@ def render_user_dashboard(client: SchemaClient) -> None:
                 render_available_parking(client, profile)
             elif kind == "feedback":
                 render_feedback(client, admin=False)
+            elif kind == "share_ride":
+                render_share_ride(client, profile, admin=False)
             else:
                 st.info("Open My Society or Contact from the left menu.")
 
