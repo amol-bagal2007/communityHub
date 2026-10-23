@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import date
+from secrets import token_hex
+from types import SimpleNamespace
 
 import streamlit as st
 from lib.supabase_client import SchemaClient
@@ -23,6 +25,7 @@ from lib.profile_extended_fields import (
     validate_extended_profile_fields,
 )
 from lib.profile_repair import registration_error_message, try_repair_orphan_profile
+from lib.remember_login import load_remembered_login, save_remembered_login
 from lib.roles import ROLE_OWNER, ROLE_TENANT, SIGNUP_ROLES, is_owner, role_label
 from lib.titles import TITLE_OPTIONS, is_valid_title
 from lib.user_demographics import MAX_AGE, MIN_AGE, SEX_OPTIONS, sex_age_validation_errors
@@ -55,7 +58,57 @@ def render_auth(client: SchemaClient) -> None:
         render_admin_contacts(client)
 
 
+def _complete_pending_login(client: SchemaClient) -> bool:
+    """Finish login after the browser has stored or cleared Remember me."""
+    pending = st.session_state.get("pending_login")
+    if not pending:
+        return False
+    saved = save_remembered_login(
+        pending["email"],
+        pending["password"],
+        pending["remember"],
+        pending["token"],
+    )
+    if not saved:
+        st.caption("Saving your login on this device…")
+        return True
+    st.session_state.pop("pending_login", None)
+    st.session_state["remembered_login"] = {
+        "email": pending["email"] if pending["remember"] else "",
+        "password": pending["password"] if pending["remember"] else "",
+        "remember": pending["remember"],
+    }
+    profile = set_session(
+        client,
+        SimpleNamespace(
+            access_token=pending["access_token"],
+            refresh_token=pending["refresh_token"],
+        ),
+    )
+    if profile and profile.get("status") == "rejected":
+        clear_session()
+        st.error("Your registration was rejected. Contact your society admin.")
+        return False
+    st.success("Logged in successfully!")
+    st.rerun()
+    return True
+
+
+def _remembered_login() -> dict | None:
+    remembered = st.session_state.get("remembered_login")
+    if isinstance(remembered, dict):
+        return remembered
+    loaded = load_remembered_login()
+    if loaded is None:
+        return None
+    st.session_state["remembered_login"] = loaded
+    return loaded
+
+
 def _render_login(client: SchemaClient) -> None:
+    if _complete_pending_login(client):
+        return
+
     if st.session_state.get("show_forgot_password"):
         render_forgot_password(client)
         if st.button("← Back to Login"):
@@ -63,9 +116,29 @@ def _render_login(client: SchemaClient) -> None:
             st.rerun()
         return
 
+    remembered = _remembered_login()
+    if remembered is None:
+        st.caption("Loading…")
+        return
+
     with st.form("login_form"):
-        email = st.text_input("Email", placeholder=EMAIL_PLACEHOLDER)
-        password = st.text_input("Password", type="password")
+        email = st.text_input(
+            "Email",
+            value=remembered.get("email") or "",
+            placeholder=EMAIL_PLACEHOLDER,
+            autocomplete="username",
+        )
+        password = st.text_input(
+            "Password",
+            value=remembered.get("password") or "",
+            type="password",
+            autocomplete="current-password",
+        )
+        remember = st.checkbox(
+            "Remember me",
+            value=bool(remembered.get("remember", True)),
+            help="Keeps your email and password in this browser for the next visit.",
+        )
         submitted = st.form_submit_button("Login", type="primary", use_container_width=True)
 
     if st.button("Forgot Password?", type="secondary", use_container_width=True):
@@ -90,12 +163,14 @@ def _render_login(client: SchemaClient) -> None:
                 {"email": email_clean, "password": password}
             )
             if response.session:
-                profile = set_session(client, response.session)
-                if profile and profile.get("status") == "rejected":
-                    clear_session()
-                    st.error("Your registration was rejected. Contact your society admin.")
-                    return
-                st.success("Logged in successfully!")
+                st.session_state["pending_login"] = {
+                    "email": email_clean,
+                    "password": password,
+                    "remember": bool(remember),
+                    "token": token_hex(8),
+                    "access_token": response.session.access_token,
+                    "refresh_token": response.session.refresh_token,
+                }
                 st.rerun()
             else:
                 st.error(
