@@ -59,7 +59,6 @@ from lib.vendor_ratings import (
     summarize_vendor_feedback,
     user_has_recommended,
 )
-from lib.feedback import render_feedback
 from lib.share_ride import render_share_ride
 from lib.donations import render_donations
 from lib.contact_numbers import duplicate_contact_message, message_if_duplicate_db_error
@@ -69,7 +68,6 @@ from lib.parking_share import render_available_parking
 from lib.visibility import (
     FLAG_AVAILABLE_PARKING_TAB,
     FLAG_EVENTS_TAB,
-    FLAG_FEEDBACK_TAB,
     FLAG_LOCAL_BUSINESS_TAB,
     FLAG_SHARE_RIDE_TAB,
     FLAG_GIVE_AWAY_TAB,
@@ -93,7 +91,6 @@ def render_user_dashboard(client: SchemaClient) -> None:
     show_available_parking = is_feature_enabled(
         client, FLAG_AVAILABLE_PARKING_TAB, default=False
     )
-    show_feedback = is_feature_enabled(client, FLAG_FEEDBACK_TAB, default=False)
     show_share_ride = is_feature_enabled(client, FLAG_SHARE_RIDE_TAB, default=False)
     show_give_away = is_feature_enabled(client, FLAG_GIVE_AWAY_TAB, default=False)
 
@@ -106,15 +103,16 @@ def render_user_dashboard(client: SchemaClient) -> None:
         tab_defs.append(("Local Business", "local_business"))
     if show_available_parking:
         tab_defs.append(("Available Parking", "available_parking"))
-    if show_feedback:
-        tab_defs.append(("Feedback/Suggestion", "feedback"))
     if show_share_ride:
         tab_defs.append(("Share a Ride", "share_ride"))
     if show_give_away:
         tab_defs.append(("Give Away / Donation", "give_away"))
 
     if not tab_defs:
-        st.info("No community tabs are enabled yet. Open My Society or Contact from the left menu.")
+        st.info(
+            "No community tabs are enabled yet. "
+            "Open My Society, Contact, or Feedback/Suggestion from the left menu."
+        )
         return
 
     tabs = st.tabs([label for label, _ in tab_defs])
@@ -128,14 +126,12 @@ def render_user_dashboard(client: SchemaClient) -> None:
                 render_local_businesses(client, profile, admin=False)
             elif kind == "available_parking":
                 render_available_parking(client, profile)
-            elif kind == "feedback":
-                render_feedback(client, admin=False)
             elif kind == "share_ride":
                 render_share_ride(client, profile, admin=False)
             elif kind == "give_away":
                 render_donations(client, profile, admin=False)
             else:
-                st.info("Open My Society or Contact from the left menu.")
+                st.info("Open My Society, Contact, or Feedback/Suggestion from the left menu.")
 
 
 def render_profile_page(client: SchemaClient, profile: dict) -> None:

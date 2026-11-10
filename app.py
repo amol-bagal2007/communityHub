@@ -9,6 +9,7 @@ from lib.auth import (
     is_logged_in,
     restore_session,
 )
+from lib.feedback import render_feedback
 from lib.mobile_ui import inject_mobile_styles, render_mobile_top_nav
 from lib.password_recovery import (
     RECOVERY_FLAG,
@@ -19,6 +20,7 @@ from lib.password_recovery import (
 from lib.profile_utils import format_name
 from lib.pwa import inject_pwa_meta
 from lib.supabase_client import get_client
+from lib.visibility import FLAG_FEEDBACK_TAB, is_feature_enabled, render_feature_toggle
 from views.admin import render_admin_dashboard
 from views.auth import render_auth
 from views.user import render_profile_page, render_society_page, render_user_dashboard
@@ -28,6 +30,7 @@ NAV_DASHBOARD = "dashboard"
 NAV_PROFILE = "profile"
 NAV_SOCIETY = "society"
 NAV_CONTACT = "contact"
+NAV_FEEDBACK = "feedback"
 
 
 def main() -> None:
@@ -113,12 +116,36 @@ Your exclusive neighborhood portal built to make society living effortless. Reco
         render_admin_contacts(client)
         return
 
+    if page == NAV_FEEDBACK:
+        st.title("🏘️ CommunityHub")
+        if is_admin():
+            render_feature_toggle(
+                client,
+                key=FLAG_FEEDBACK_TAB,
+                label="Enable Feedback/Suggestion for members",
+                help_text="When checked, approved members see Feedback/Suggestion in the left menu.",
+                widget_key="admin_enable_feedback_tab",
+            )
+            st.divider()
+            render_feedback(client, admin=True)
+        elif is_feature_enabled(client, FLAG_FEEDBACK_TAB, default=False):
+            render_feedback(client, admin=False)
+        else:
+            st.info("Feedback/Suggestion is not enabled yet. Ask your admin to turn it on.")
+        return
+
     if is_admin():
         render_admin_dashboard(client)
     elif is_approved_user():
         render_user_dashboard(client)
     else:
         st.error("Access denied.")
+
+
+def _show_feedback_nav(client) -> bool:
+    if is_admin():
+        return True
+    return is_feature_enabled(client, FLAG_FEEDBACK_TAB, default=False)
 
 
 def _render_sidebar(client) -> None:
@@ -166,6 +193,14 @@ def _render_sidebar(client) -> None:
                         key="nav_contact",
                     ):
                         st.session_state[NAV_KEY] = NAV_CONTACT
+                        st.rerun()
+                    if _show_feedback_nav(client) and st.button(
+                        "Feedback/Suggestion",
+                        use_container_width=True,
+                        type="primary" if current == NAV_FEEDBACK else "secondary",
+                        key="nav_feedback",
+                    ):
+                        st.session_state[NAV_KEY] = NAV_FEEDBACK
                         st.rerun()
                     st.divider()
             if st.button("Logout", use_container_width=True):

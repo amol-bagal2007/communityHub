@@ -66,14 +66,12 @@ from lib.vendor_ratings import (
 )
 from lib.contact_numbers import duplicate_contact_message, message_if_duplicate_db_error
 from lib.contact_privacy import format_visible_contact
-from lib.feedback import render_feedback
 from lib.share_ride import render_share_ride
 from lib.donations import render_donations
 from lib.local_businesses import INFO_NOTE, render_local_businesses
 from lib.visibility import (
     FLAG_AVAILABLE_PARKING_TAB,
     FLAG_EVENTS_TAB,
-    FLAG_FEEDBACK_TAB,
     FLAG_LOCAL_BUSINESS_TAB,
     FLAG_SHARE_RIDE_TAB,
     FLAG_GIVE_AWAY_TAB,
@@ -98,7 +96,6 @@ def render_admin_dashboard(client: SchemaClient) -> None:
         tab_local_business,
         tab_parking,
         tab_events,
-        tab_feedback,
         tab_share_ride,
         tab_give_away,
     ) = st.tabs(
@@ -110,7 +107,6 @@ def render_admin_dashboard(client: SchemaClient) -> None:
             "Local Business",
             "Available Parking",
             "Events",
-            "Feedback/Suggestion",
             "Share a Ride",
             "Give Away / Donation",
         ]
@@ -136,17 +132,6 @@ def render_admin_dashboard(client: SchemaClient) -> None:
 
     with tab_events:
         _render_events_crud(client)
-
-    with tab_feedback:
-        render_feature_toggle(
-            client,
-            key=FLAG_FEEDBACK_TAB,
-            label="Enable Feedback/Suggestion tab for members",
-            help_text="When checked, approved members see the Feedback/Suggestion tab.",
-            widget_key="admin_enable_feedback_tab",
-        )
-        st.divider()
-        render_feedback(client, admin=True)
 
     with tab_share_ride:
         render_feature_toggle(
