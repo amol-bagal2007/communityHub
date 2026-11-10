@@ -68,6 +68,7 @@ from lib.contact_numbers import duplicate_contact_message, message_if_duplicate_
 from lib.contact_privacy import format_visible_contact
 from lib.feedback import render_feedback
 from lib.share_ride import render_share_ride
+from lib.donations import render_donations
 from lib.local_businesses import INFO_NOTE, render_local_businesses
 from lib.visibility import (
     FLAG_AVAILABLE_PARKING_TAB,
@@ -75,6 +76,7 @@ from lib.visibility import (
     FLAG_FEEDBACK_TAB,
     FLAG_LOCAL_BUSINESS_TAB,
     FLAG_SHARE_RIDE_TAB,
+    FLAG_GIVE_AWAY_TAB,
     FLAG_VENDORS_TAB,
     load_societies,
     render_feature_toggle,
@@ -98,6 +100,7 @@ def render_admin_dashboard(client: SchemaClient) -> None:
         tab_events,
         tab_feedback,
         tab_share_ride,
+        tab_give_away,
     ) = st.tabs(
         [
             "Pending Approvals",
@@ -109,6 +112,7 @@ def render_admin_dashboard(client: SchemaClient) -> None:
             "Events",
             "Feedback/Suggestion",
             "Share a Ride",
+            "Give Away / Donation",
         ]
     )
 
@@ -154,6 +158,17 @@ def render_admin_dashboard(client: SchemaClient) -> None:
         )
         st.divider()
         render_share_ride(client, profile, admin=True)
+
+    with tab_give_away:
+        render_feature_toggle(
+            client,
+            key=FLAG_GIVE_AWAY_TAB,
+            label="Enable Give Away / Donation tab for members",
+            help_text="When checked, approved members see the Give Away / Donation tab.",
+            widget_key="admin_enable_give_away_tab",
+        )
+        st.divider()
+        render_donations(client, profile, admin=True)
 
 
 def _render_pending_approvals(client: SchemaClient) -> None:

@@ -10,6 +10,7 @@ FLAG_LOCAL_BUSINESS_TAB = "local_business_tab"
 FLAG_AVAILABLE_PARKING_TAB = "available_parking_tab"
 FLAG_FEEDBACK_TAB = "feedback_tab"
 FLAG_SHARE_RIDE_TAB = "share_ride_tab"
+FLAG_GIVE_AWAY_TAB = "give_away_tab"
 
 
 def is_feature_enabled(client: SchemaClient, key: str, *, default: bool = False) -> bool:

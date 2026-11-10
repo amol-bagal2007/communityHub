@@ -61,6 +61,7 @@ from lib.vendor_ratings import (
 )
 from lib.feedback import render_feedback
 from lib.share_ride import render_share_ride
+from lib.donations import render_donations
 from lib.contact_numbers import duplicate_contact_message, message_if_duplicate_db_error
 from lib.contact_privacy import format_visible_contact
 from lib.local_businesses import INFO_NOTE, render_local_businesses
@@ -71,6 +72,7 @@ from lib.visibility import (
     FLAG_FEEDBACK_TAB,
     FLAG_LOCAL_BUSINESS_TAB,
     FLAG_SHARE_RIDE_TAB,
+    FLAG_GIVE_AWAY_TAB,
     FLAG_VENDORS_TAB,
     is_feature_enabled,
     load_societies,
@@ -93,6 +95,7 @@ def render_user_dashboard(client: SchemaClient) -> None:
     )
     show_feedback = is_feature_enabled(client, FLAG_FEEDBACK_TAB, default=False)
     show_share_ride = is_feature_enabled(client, FLAG_SHARE_RIDE_TAB, default=False)
+    show_give_away = is_feature_enabled(client, FLAG_GIVE_AWAY_TAB, default=False)
 
     tab_defs: list[tuple[str, str]] = []
     if show_events:
@@ -107,6 +110,8 @@ def render_user_dashboard(client: SchemaClient) -> None:
         tab_defs.append(("Feedback/Suggestion", "feedback"))
     if show_share_ride:
         tab_defs.append(("Share a Ride", "share_ride"))
+    if show_give_away:
+        tab_defs.append(("Give Away / Donation", "give_away"))
 
     if not tab_defs:
         st.info("No community tabs are enabled yet. Open My Society or Contact from the left menu.")
@@ -127,6 +132,8 @@ def render_user_dashboard(client: SchemaClient) -> None:
                 render_feedback(client, admin=False)
             elif kind == "share_ride":
                 render_share_ride(client, profile, admin=False)
+            elif kind == "give_away":
+                render_donations(client, profile, admin=False)
             else:
                 st.info("Open My Society or Contact from the left menu.")
 
